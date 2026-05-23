@@ -4,6 +4,7 @@ const path = require("path");
 const { execFile } = require("child_process");
 
 const PORT = Number(process.env.PORT || 3017);
+const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 
@@ -227,6 +228,6 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`Slurm Job History Explorer listening on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Slurm Job History Explorer listening on http://${HOST}:${PORT}`);
 });
