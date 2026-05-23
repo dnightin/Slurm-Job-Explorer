@@ -2,6 +2,7 @@ const chart = document.querySelector("#runtimeChart");
 const ctx = chart.getContext("2d");
 const form = document.querySelector("#filters");
 const tooltip = document.querySelector("#tooltip");
+const daysEl = document.querySelector("#days");
 const statusEl = document.querySelector("#status");
 const jobCountEl = document.querySelector("#jobCount");
 const medianRuntimeEl = document.querySelector("#medianRuntime");
@@ -368,6 +369,10 @@ resetZoomButton.addEventListener("click", () => {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
+  loadJobs();
+});
+
+daysEl.addEventListener("change", () => {
   loadJobs();
 });
 
