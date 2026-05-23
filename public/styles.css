@@ -154,7 +154,8 @@ button:disabled {
 
 .summary p,
 .chart-head p,
-.legend {
+.legend,
+.size-legend {
   color: var(--muted);
   font-size: 0.86rem;
 }
@@ -179,31 +180,69 @@ button:disabled {
   flex-wrap: wrap;
 }
 
-.legend {
+.legend-stack {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: flex-end;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.legend,
+.size-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .legend span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
 }
 
 .legend i {
   width: 10px;
   height: 10px;
+  border: 1px solid rgba(23, 32, 28, 0.32);
   border-radius: 50%;
 }
 
-.legend .completed {
-  background: var(--accent);
+.size-legend {
+  gap: 7px;
 }
 
-.legend .other {
-  background: var(--orange);
+.size-legend i {
+  display: inline-block;
+  border: 1px solid rgba(23, 32, 28, 0.32);
+  border-radius: 50%;
+  background: #9aa8a1;
+}
+
+.size-legend .size-1 {
+  width: 7px;
+  height: 7px;
+}
+
+.size-legend .size-2 {
+  width: 10px;
+  height: 10px;
+}
+
+.size-legend .size-3 {
+  width: 13px;
+  height: 13px;
+}
+
+.size-legend .size-4 {
+  width: 16px;
+  height: 16px;
+}
+
+.size-legend .size-5 {
+  width: 19px;
+  height: 19px;
 }
 
 .canvas-wrap {
@@ -261,6 +300,10 @@ canvas {
 
   .chart-tools {
     align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .legend-stack {
     justify-content: flex-start;
   }
 

@@ -8,6 +8,19 @@ const medianRuntimeEl = document.querySelector("#medianRuntime");
 const p95RuntimeEl = document.querySelector("#p95Runtime");
 const sourceEl = document.querySelector("#source");
 const resetZoomButton = document.querySelector("#resetZoom");
+const stateLegendEl = document.querySelector("#stateLegend");
+
+const STATE_STYLES = {
+  COMPLETED: { label: "Completed", fill: "rgba(22, 122, 114, 0.78)", stroke: "#0d4e49" },
+  FAILED: { label: "Failed", fill: "rgba(193, 67, 67, 0.78)", stroke: "#8f2424" },
+  CANCELLED: { label: "Cancelled", fill: "rgba(112, 102, 173, 0.78)", stroke: "#4f4787" },
+  TIMEOUT: { label: "Timeout", fill: "rgba(197, 102, 47, 0.78)", stroke: "#8f3f18" },
+  RUNNING: { label: "Running", fill: "rgba(48, 112, 185, 0.78)", stroke: "#245380" },
+  PENDING: { label: "Pending", fill: "rgba(117, 126, 44, 0.78)", stroke: "#5d641f" },
+  OTHER: { label: "Other", fill: "rgba(102, 115, 109, 0.72)", stroke: "#4f5a55" },
+};
+
+const RUNTIME_RADII = [4, 6, 8, 10, 13];
 
 let plottedPoints = [];
 let currentJobs = [];
@@ -15,6 +28,7 @@ let fullTimeRange = null;
 let timeRange = null;
 let lastPayload = null;
 let plotArea = null;
+let runtimeBreaks = [];
 
 function formatRuntime(seconds) {
   if (!Number.isFinite(seconds)) return "-";
@@ -43,6 +57,37 @@ function quantile(values, q) {
   const upper = Math.ceil(index);
   if (lower === upper) return sorted[lower];
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function normalizeState(state) {
+  const normalized = String(state || "OTHER").toUpperCase().split(/[ +]/)[0];
+  return STATE_STYLES[normalized] ? normalized : "OTHER";
+}
+
+function getStateStyle(state) {
+  return STATE_STYLES[normalizeState(state)];
+}
+
+function setRuntimeBreaks(jobs) {
+  const runtimes = jobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
+  runtimeBreaks = [0.2, 0.4, 0.6, 0.8].map((q) => quantile(runtimes, q)).filter(Number.isFinite);
+}
+
+function getRuntimeBucket(runtimeSeconds) {
+  const bucket = runtimeBreaks.findIndex((breakpoint) => runtimeSeconds <= breakpoint);
+  return bucket === -1 ? RUNTIME_RADII.length - 1 : bucket;
+}
+
+function renderStateLegend(jobs) {
+  const states = [...new Set(jobs.map((job) => normalizeState(job.state)))];
+  const orderedStates = Object.keys(STATE_STYLES).filter((state) => states.includes(state));
+
+  stateLegendEl.innerHTML = orderedStates
+    .map((state) => {
+      const style = STATE_STYLES[state];
+      return `<span><i style="background:${style.fill}; border-color:${style.stroke}"></i>${style.label}</span>`;
+    })
+    .join("");
 }
 
 function resizeCanvas() {
@@ -172,17 +217,18 @@ function drawChart(jobs) {
   datedJobs.forEach((job) => {
     const x = xFor(job.startMs);
     const y = yFor(job.runtimeSeconds);
-    const radius = Math.max(4, Math.min(9, 3 + Math.log2((job.allocCpus || 1) + 1)));
-    const isCompleted = String(job.state).startsWith("COMPLETED");
+    const bucket = getRuntimeBucket(job.runtimeSeconds);
+    const radius = RUNTIME_RADII[bucket];
+    const stateStyle = getStateStyle(job.state);
 
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = isCompleted ? "rgba(22, 122, 114, 0.78)" : "rgba(197, 102, 47, 0.78)";
+    ctx.fillStyle = stateStyle.fill;
     ctx.fill();
-    ctx.strokeStyle = isCompleted ? "#0d4e49" : "#8f3f18";
+    ctx.strokeStyle = stateStyle.stroke;
     ctx.stroke();
 
-    plottedPoints.push({ x, y, radius: radius + 3, job });
+    plottedPoints.push({ x, y, radius: radius + 4, job, bucket });
   });
 }
 
@@ -206,6 +252,8 @@ async function loadJobs() {
     if (!response.ok) throw new Error(`Request failed with ${response.status}`);
     const payload = await response.json();
     currentJobs = payload.jobs;
+    setRuntimeBreaks(currentJobs);
+    renderStateLegend(currentJobs);
     setFullTimeRange(currentJobs);
     updateSummary(payload);
     drawChart(currentJobs);
@@ -231,6 +279,7 @@ chart.addEventListener("mousemove", (event) => {
   tooltip.innerHTML = `
     <strong>${hit.job.jobId} · ${hit.job.jobName || "job"}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
+    Runtime size: ${hit.bucket + 1} of 5<br>
     State: ${hit.job.state || "Unknown"}<br>
     User: ${hit.job.user || "Unknown"}<br>
     Start: ${formatDate(hit.job.start)}

@@ -59,9 +59,16 @@
           </div>
           <div class="chart-tools">
             <button id="resetZoom" class="secondary" type="button" disabled>Reset zoom</button>
-            <div class="legend">
-              <span><i class="completed"></i>Completed</span>
-              <span><i class="other"></i>Other states</span>
+            <div class="legend-stack">
+              <div id="stateLegend" class="legend" aria-label="State color legend"></div>
+              <div class="size-legend" aria-label="Runtime size legend">
+                <span>Runtime</span>
+                <i class="size-1"></i>
+                <i class="size-2"></i>
+                <i class="size-3"></i>
+                <i class="size-4"></i>
+                <i class="size-5"></i>
+              </div>
             </div>
           </div>
         </div>
