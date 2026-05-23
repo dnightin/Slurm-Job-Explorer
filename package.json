@@ -1,0 +1,12 @@
+{
+  "name": "slurm-job-history-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A small web app for exploring Slurm sacct job history.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
