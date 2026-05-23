@@ -21,7 +21,13 @@ const STATE_STYLES = {
   OTHER: { label: "Other", fill: "rgba(102, 115, 109, 0.72)", stroke: "#4f5a55" },
 };
 
-const RUNTIME_RADII = [4, 6, 8, 10, 13];
+const RUNTIME_BUCKETS = [
+  { label: "0-12 hours", maxSeconds: 12 * 60 * 60, radius: 4 },
+  { label: "13-72 hours", maxSeconds: 72 * 60 * 60, radius: 6 },
+  { label: "73 hours-1 week", maxSeconds: 7 * 24 * 60 * 60, radius: 8 },
+  { label: "2 weeks", maxSeconds: 28 * 24 * 60 * 60, radius: 10 },
+  { label: "28+ days", maxSeconds: Infinity, radius: 13 },
+];
 
 let plottedPoints = [];
 let loadedJobs = [];
@@ -30,7 +36,6 @@ let fullTimeRange = null;
 let timeRange = null;
 let lastPayload = null;
 let plotArea = null;
-let runtimeBreaks = [];
 
 function formatRuntime(seconds) {
   if (!Number.isFinite(seconds)) return "-";
@@ -79,14 +84,9 @@ function getStateStyle(state) {
   return STATE_STYLES[normalizeState(state)];
 }
 
-function setRuntimeBreaks(jobs) {
-  const runtimes = jobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
-  runtimeBreaks = [0.2, 0.4, 0.6, 0.8].map((q) => quantile(runtimes, q)).filter(Number.isFinite);
-}
-
 function getRuntimeBucket(runtimeSeconds) {
-  const bucket = runtimeBreaks.findIndex((breakpoint) => runtimeSeconds <= breakpoint);
-  return bucket === -1 ? RUNTIME_RADII.length - 1 : bucket;
+  const bucket = RUNTIME_BUCKETS.findIndex((range) => runtimeSeconds <= range.maxSeconds);
+  return bucket === -1 ? RUNTIME_BUCKETS.length - 1 : bucket;
 }
 
 function renderStateLegend(jobs) {
@@ -121,7 +121,6 @@ function getFilteredJobs() {
 
 function applyFilters() {
   currentJobs = getFilteredJobs();
-  setRuntimeBreaks(currentJobs);
   renderStateLegend(currentJobs);
   setFullTimeRange(currentJobs);
   updateSummary();
@@ -258,7 +257,8 @@ function drawChart(jobs) {
     const x = xFor(job.startMs);
     const y = yFor(job.runtimeSeconds);
     const bucket = getRuntimeBucket(job.runtimeSeconds);
-    const radius = RUNTIME_RADII[bucket];
+    const runtimeBucket = RUNTIME_BUCKETS[bucket];
+    const radius = runtimeBucket.radius;
     const stateStyle = getStateStyle(job.state);
 
     ctx.beginPath();
@@ -268,7 +268,7 @@ function drawChart(jobs) {
     ctx.strokeStyle = stateStyle.stroke;
     ctx.stroke();
 
-    plottedPoints.push({ x, y, radius: radius + 4, job, bucket });
+    plottedPoints.push({ x, y, radius: radius + 4, job, bucket: runtimeBucket });
   });
 }
 
@@ -316,7 +316,7 @@ chart.addEventListener("mousemove", (event) => {
   tooltip.innerHTML = `
     <strong>${hit.job.jobId} · ${hit.job.jobName || "job"}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
-    Runtime size: ${hit.bucket + 1} of 5<br>
+    Runtime size: ${hit.bucket.label}<br>
     State: ${hit.job.state || "Unknown"}<br>
     User: ${hit.job.user || "Unknown"}<br>
     Start: ${formatDate(hit.job.start)}
