@@ -7,9 +7,14 @@ const jobCountEl = document.querySelector("#jobCount");
 const medianRuntimeEl = document.querySelector("#medianRuntime");
 const p95RuntimeEl = document.querySelector("#p95Runtime");
 const sourceEl = document.querySelector("#source");
+const resetZoomButton = document.querySelector("#resetZoom");
 
 let plottedPoints = [];
 let currentJobs = [];
+let fullTimeRange = null;
+let timeRange = null;
+let lastPayload = null;
+let plotArea = null;
 
 function formatRuntime(seconds) {
   if (!Number.isFinite(seconds)) return "-";
@@ -48,19 +53,71 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 
+function getDatedJobs(jobs) {
+  return jobs
+    .map((job) => ({ ...job, startMs: new Date(job.start || job.submit || job.end).getTime() }))
+    .filter((job) => Number.isFinite(job.startMs) && Number.isFinite(job.runtimeSeconds));
+}
+
+function setFullTimeRange(jobs) {
+  const datedJobs = getDatedJobs(jobs);
+  if (!datedJobs.length) {
+    fullTimeRange = null;
+    timeRange = null;
+    return;
+  }
+
+  const min = Math.min(...datedJobs.map((job) => job.startMs));
+  const max = Math.max(...datedJobs.map((job) => job.startMs));
+  const pad = Math.max(1, (max - min) * 0.02);
+  fullTimeRange = { min: min - pad, max: max + pad };
+  timeRange = { ...fullTimeRange };
+}
+
+function isZoomed() {
+  if (!fullTimeRange || !timeRange) return false;
+  return timeRange.min > fullTimeRange.min || timeRange.max < fullTimeRange.max;
+}
+
+function updateZoomControl() {
+  resetZoomButton.disabled = !isZoomed();
+}
+
+function updateStatusText(visibleCount) {
+  if (!lastPayload) return;
+
+  const sourceText = lastPayload.warning || `Showing ${currentJobs.length.toLocaleString()} jobs from ${lastPayload.source}.`;
+  if (isZoomed()) {
+    statusEl.textContent = `${sourceText} Zoomed to ${visibleCount.toLocaleString()} visible jobs.`;
+    return;
+  }
+
+  statusEl.textContent = sourceText;
+}
+
 function drawChart(jobs) {
   resizeCanvas();
 
   const width = chart.clientWidth;
   const height = chart.clientHeight;
   const padding = { top: 24, right: 28, bottom: 52, left: 72 };
+  plotArea = {
+    left: padding.left,
+    right: width - padding.right,
+    top: padding.top,
+    bottom: height - padding.bottom,
+  };
   ctx.clearRect(0, 0, width, height);
 
-  const datedJobs = jobs
-    .map((job) => ({ ...job, startMs: new Date(job.start || job.submit || job.end).getTime() }))
-    .filter((job) => Number.isFinite(job.startMs) && Number.isFinite(job.runtimeSeconds));
+  const range = timeRange || fullTimeRange;
+  const datedJobs = getDatedJobs(jobs).filter((job) => {
+    if (!range) return true;
+    return job.startMs >= range.min && job.startMs <= range.max;
+  });
 
   plottedPoints = [];
+  updateZoomControl();
+  updateStatusText(datedJobs.length);
 
   if (!datedJobs.length) {
     ctx.fillStyle = "#66736d";
@@ -69,8 +126,8 @@ function drawChart(jobs) {
     return;
   }
 
-  const minX = Math.min(...datedJobs.map((job) => job.startMs));
-  const maxX = Math.max(...datedJobs.map((job) => job.startMs));
+  const minX = range ? range.min : Math.min(...datedJobs.map((job) => job.startMs));
+  const maxX = range ? range.max : Math.max(...datedJobs.map((job) => job.startMs));
   const maxRuntime = Math.max(...datedJobs.map((job) => job.runtimeSeconds));
   const yMax = Math.max(60, maxRuntime * 1.08);
   const plotWidth = width - padding.left - padding.right;
@@ -135,7 +192,8 @@ function updateSummary(payload) {
   medianRuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.5));
   p95RuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.95));
   sourceEl.textContent = payload.source;
-  statusEl.textContent = payload.warning || `Showing ${payload.jobs.length.toLocaleString()} jobs from ${payload.source}.`;
+  lastPayload = payload;
+  updateStatusText(payload.jobs.length);
 }
 
 async function loadJobs() {
@@ -148,6 +206,7 @@ async function loadJobs() {
     if (!response.ok) throw new Error(`Request failed with ${response.status}`);
     const payload = await response.json();
     currentJobs = payload.jobs;
+    setFullTimeRange(currentJobs);
     updateSummary(payload);
     drawChart(currentJobs);
   } catch (error) {
@@ -178,8 +237,47 @@ chart.addEventListener("mousemove", (event) => {
   `;
 });
 
+chart.addEventListener("wheel", (event) => {
+  if (!fullTimeRange || !timeRange || !plotArea) return;
+
+  event.preventDefault();
+  tooltip.hidden = true;
+
+  const rect = chart.getBoundingClientRect();
+  const pointerX = Math.max(plotArea.left, Math.min(plotArea.right, event.clientX - rect.left));
+  const pointerRatio = (pointerX - plotArea.left) / Math.max(1, plotArea.right - plotArea.left);
+  const currentSpan = timeRange.max - timeRange.min;
+  const fullSpan = fullTimeRange.max - fullTimeRange.min;
+  const minSpan = Math.max(60 * 1000, fullSpan / 500);
+  const scale = event.deltaY < 0 ? 0.82 : 1.22;
+  const nextSpan = Math.max(minSpan, Math.min(fullSpan, currentSpan * scale));
+  const anchor = timeRange.min + currentSpan * pointerRatio;
+
+  let nextMin = anchor - nextSpan * pointerRatio;
+  let nextMax = nextMin + nextSpan;
+
+  if (nextMin < fullTimeRange.min) {
+    nextMin = fullTimeRange.min;
+    nextMax = nextMin + nextSpan;
+  }
+
+  if (nextMax > fullTimeRange.max) {
+    nextMax = fullTimeRange.max;
+    nextMin = nextMax - nextSpan;
+  }
+
+  timeRange = { min: nextMin, max: nextMax };
+  drawChart(currentJobs);
+}, { passive: false });
+
 chart.addEventListener("mouseleave", () => {
   tooltip.hidden = true;
+});
+
+resetZoomButton.addEventListener("click", () => {
+  if (!fullTimeRange) return;
+  timeRange = { ...fullTimeRange };
+  drawChart(currentJobs);
 });
 
 form.addEventListener("submit", (event) => {
