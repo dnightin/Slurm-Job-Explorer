@@ -9,6 +9,7 @@ const p95RuntimeEl = document.querySelector("#p95Runtime");
 const sourceEl = document.querySelector("#source");
 const resetZoomButton = document.querySelector("#resetZoom");
 const stateLegendEl = document.querySelector("#stateLegend");
+const userFilterEl = document.querySelector("#userFilter");
 
 const STATE_STYLES = {
   COMPLETED: { label: "Completed", fill: "rgba(22, 122, 114, 0.78)", stroke: "#0d4e49" },
@@ -23,6 +24,7 @@ const STATE_STYLES = {
 const RUNTIME_RADII = [4, 6, 8, 10, 13];
 
 let plottedPoints = [];
+let loadedJobs = [];
 let currentJobs = [];
 let fullTimeRange = null;
 let timeRange = null;
@@ -47,6 +49,15 @@ function formatDate(value) {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function quantile(values, q) {
@@ -90,6 +101,33 @@ function renderStateLegend(jobs) {
     .join("");
 }
 
+function renderUserFilter(jobs) {
+  const selectedUser = userFilterEl.value;
+  const users = [...new Set(jobs.map((job) => job.user).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const nextValue = users.includes(selectedUser) ? selectedUser : "";
+
+  userFilterEl.innerHTML = [
+    '<option value="">All users</option>',
+    ...users.map((user) => `<option value="${escapeHtml(user)}">${escapeHtml(user)}</option>`),
+  ].join("");
+  userFilterEl.value = nextValue;
+}
+
+function getFilteredJobs() {
+  const selectedUser = userFilterEl.value;
+  if (!selectedUser) return loadedJobs;
+  return loadedJobs.filter((job) => job.user === selectedUser);
+}
+
+function applyFilters() {
+  currentJobs = getFilteredJobs();
+  setRuntimeBreaks(currentJobs);
+  renderStateLegend(currentJobs);
+  setFullTimeRange(currentJobs);
+  updateSummary();
+  drawChart(currentJobs);
+}
+
 function resizeCanvas() {
   const rect = chart.getBoundingClientRect();
   const ratio = window.devicePixelRatio || 1;
@@ -131,7 +169,9 @@ function updateZoomControl() {
 function updateStatusText(visibleCount) {
   if (!lastPayload) return;
 
-  const sourceText = lastPayload.warning || `Showing ${currentJobs.length.toLocaleString()} jobs from ${lastPayload.source}.`;
+  const selectedUser = userFilterEl.value;
+  const filteredText = selectedUser ? ` for ${selectedUser}` : "";
+  const sourceText = lastPayload.warning || `Showing ${currentJobs.length.toLocaleString()} of ${loadedJobs.length.toLocaleString()} jobs${filteredText} from ${lastPayload.source}.`;
   if (isZoomed()) {
     statusEl.textContent = `${sourceText} Zoomed to ${visibleCount.toLocaleString()} visible jobs.`;
     return;
@@ -232,14 +272,13 @@ function drawChart(jobs) {
   });
 }
 
-function updateSummary(payload) {
-  const runtimes = payload.jobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
-  jobCountEl.textContent = payload.jobs.length.toLocaleString();
+function updateSummary() {
+  const runtimes = currentJobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
+  jobCountEl.textContent = currentJobs.length.toLocaleString();
   medianRuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.5));
   p95RuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.95));
-  sourceEl.textContent = payload.source;
-  lastPayload = payload;
-  updateStatusText(payload.jobs.length);
+  sourceEl.textContent = lastPayload?.source || "-";
+  updateStatusText(currentJobs.length);
 }
 
 async function loadJobs() {
@@ -251,12 +290,10 @@ async function loadJobs() {
     const response = await fetch(`/api/jobs?${params.toString()}`);
     if (!response.ok) throw new Error(`Request failed with ${response.status}`);
     const payload = await response.json();
-    currentJobs = payload.jobs;
-    setRuntimeBreaks(currentJobs);
-    renderStateLegend(currentJobs);
-    setFullTimeRange(currentJobs);
-    updateSummary(payload);
-    drawChart(currentJobs);
+    lastPayload = payload;
+    loadedJobs = payload.jobs;
+    renderUserFilter(loadedJobs);
+    applyFilters();
   } catch (error) {
     statusEl.textContent = error.message;
   }
@@ -332,6 +369,11 @@ resetZoomButton.addEventListener("click", () => {
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   loadJobs();
+});
+
+userFilterEl.addEventListener("change", () => {
+  tooltip.hidden = true;
+  applyFilters();
 });
 
 window.addEventListener("resize", () => drawChart(currentJobs));
