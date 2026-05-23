@@ -282,6 +282,25 @@ function updateSummary() {
   updateStatusText(currentJobs.length);
 }
 
+function positionTooltip(hit) {
+  const margin = 12;
+  const width = chart.clientWidth;
+  const height = chart.clientHeight;
+  const tooltipRect = tooltip.getBoundingClientRect();
+  let left = hit.x + margin;
+  let top = hit.y - tooltipRect.height / 2;
+
+  if (left + tooltipRect.width + margin > width) {
+    left = hit.x - tooltipRect.width - margin;
+  }
+
+  left = Math.max(margin, Math.min(width - tooltipRect.width - margin, left));
+  top = Math.max(margin, Math.min(height - tooltipRect.height - margin, top));
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
 async function loadJobs() {
   const params = new URLSearchParams(new FormData(form));
   statusEl.textContent = "Loading job history...";
@@ -312,8 +331,6 @@ chart.addEventListener("mousemove", (event) => {
   }
 
   tooltip.hidden = false;
-  tooltip.style.left = `${hit.x}px`;
-  tooltip.style.top = `${hit.y}px`;
   tooltip.innerHTML = `
     <strong>${hit.job.jobId} · ${hit.job.jobName || "job"}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
@@ -322,6 +339,7 @@ chart.addEventListener("mousemove", (event) => {
     User: ${hit.job.user || "Unknown"}<br>
     Start: ${formatDate(hit.job.start)}
   `;
+  positionTooltip(hit);
 });
 
 chart.addEventListener("wheel", (event) => {
