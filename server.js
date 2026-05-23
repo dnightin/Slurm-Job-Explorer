@@ -63,6 +63,43 @@ function parseDurationToSeconds(value) {
   return (((days * 24 + hours) * 60 + minutes) * 60) + seconds;
 }
 
+function parseSacctDate(value) {
+  if (!value || value === "Unknown" || value === "INVALID") return null;
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed;
+}
+
+function formatSacctDate(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join("-") + `T${[
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join(":")}`;
+}
+
+function getJobStartMs(job) {
+  const date = parseSacctDate(job.start) || parseSacctDate(job.submit) || parseSacctDate(job.end);
+  return date ? date.getTime() : null;
+}
+
+function filterJobsByWindow(jobs, startDate, endDate) {
+  const startMs = startDate.getTime();
+  const endMs = endDate.getTime();
+
+  return jobs.filter((job) => {
+    const jobStartMs = getJobStartMs(job);
+    return jobStartMs != null && jobStartMs >= startMs && jobStartMs <= endMs;
+  });
+}
+
 function parseSacctRows(stdout) {
   const lines = stdout.split(/\r?\n/).filter(Boolean);
 
@@ -144,8 +181,10 @@ function formatSeconds(totalSeconds) {
 function fetchSacctJobs(query) {
   const days = sanitizeNumber(query.get("days"), 14, 1, 365);
   const limit = sanitizeNumber(query.get("limit"), 500, 10, 5000);
-  const start = query.get("start") || `now-${days}days`;
-  const end = query.get("end") || "now";
+  const requestedEnd = parseSacctDate(query.get("end")) || new Date();
+  const requestedStart = parseSacctDate(query.get("start")) || new Date(requestedEnd.getTime() - days * 24 * 60 * 60 * 1000);
+  const start = formatSacctDate(requestedStart);
+  const end = formatSacctDate(requestedEnd);
   const fields = [
     "JobIDRaw",
     "JobName",
@@ -178,18 +217,20 @@ function fetchSacctJobs(query) {
   return new Promise((resolve) => {
     execFile("sacct", args, { timeout: 20000, maxBuffer: 1024 * 1024 * 8 }, (error, stdout, stderr) => {
       if (error) {
+        const sampleJobs = filterJobsByWindow(createSampleJobs(), requestedStart, requestedEnd).slice(0, limit);
         resolve({
           source: "sample",
           warning: `sacct unavailable or failed: ${stderr || error.message}`,
-          jobs: createSampleJobs().slice(0, limit),
+          jobs: sampleJobs,
         });
         return;
       }
 
+      const jobs = filterJobsByWindow(parseSacctRows(stdout), requestedStart, requestedEnd).slice(0, limit);
       resolve({
         source: "sacct",
         warning: null,
-        jobs: parseSacctRows(stdout).slice(0, limit),
+        jobs,
       });
     });
   });
