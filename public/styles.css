@@ -27,28 +27,28 @@ body {
 .shell {
   width: min(1440px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 22px 0 28px;
+  padding: 16px 0 24px;
 }
 
 .topbar {
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 16px;
+  gap: 18px;
+  margin-bottom: 12px;
 }
 
 .title-block {
   display: grid;
   align-content: end;
-  gap: 5px;
+  gap: 3px;
   min-width: 280px;
 }
 
 .eyebrow {
   margin: 0;
   color: var(--accent-dark);
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -61,8 +61,8 @@ p {
 }
 
 h1 {
-  font-size: clamp(2.2rem, 5vw, 4.8rem);
-  line-height: 0.92;
+  font-size: clamp(1.85rem, 3.2vw, 3.15rem);
+  line-height: 0.98;
   letter-spacing: 0;
 }
 
@@ -73,7 +73,7 @@ h2 {
 
 .dataset-meta {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.82rem;
 }
 
 .control-panel {
@@ -82,7 +82,7 @@ h2 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 10px 32px rgba(23, 32, 28, 0.05);
-  padding: 10px;
+  padding: 8px;
 }
 
 .filters {
@@ -94,16 +94,16 @@ h2 {
 
 label {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
 select,
 input,
 button {
-  min-height: 40px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--panel);
@@ -113,8 +113,8 @@ button {
 
 select,
 input {
-  min-width: 112px;
-  padding: 0 10px;
+  min-width: 104px;
+  padding: 0 9px;
 }
 
 select:focus,
@@ -126,7 +126,7 @@ button:focus-visible {
 }
 
 button {
-  padding: 0 16px;
+  padding: 0 14px;
   border-color: var(--accent);
   background: var(--accent);
   color: white;
@@ -159,8 +159,8 @@ button:disabled {
 .summary {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .summary article,
@@ -173,13 +173,13 @@ button:disabled {
 
 .summary article {
   min-width: 0;
-  padding: 13px 14px;
+  padding: 10px 12px;
 }
 
 .summary span {
   display: block;
   overflow: hidden;
-  font-size: clamp(1.25rem, 1.7vw, 1.75rem);
+  font-size: clamp(1.08rem, 1.35vw, 1.38rem);
   font-weight: 850;
   letter-spacing: 0;
   text-overflow: ellipsis;
@@ -191,7 +191,7 @@ button:disabled {
 .legend,
 .size-legend {
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.78rem;
 }
 
 .summary p {
@@ -210,7 +210,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 18px 10px;
+  padding: 12px 16px 9px;
   border-bottom: 1px solid var(--line);
 }
 
