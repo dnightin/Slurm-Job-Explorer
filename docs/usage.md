@@ -1,5 +1,13 @@
 # Usage
 
+## Sample Screenshots
+
+The images below use sanitized sample data for documentation.
+
+![Sanitized dashboard screenshot](assets/sample-dashboard.png)
+
+![Sanitized tooltip screenshot](assets/sample-tooltip.png)
+
 ## Filters
 
 - `Window`: reloads data for the selected number of days.
@@ -35,4 +43,3 @@ Use the mousewheel over the chart to scale the visible time range:
 - Wheel up: zoom in around the cursor
 - Wheel down: zoom out around the cursor
 - `Reset zoom`: return to the full loaded time range
-

@@ -13,6 +13,14 @@ A small Node.js web app for exploring Slurm `sacct` history in a browser. The fi
 - Hover tooltips show job details
 - Falls back to sample data if `sacct` is unavailable
 
+## Screenshots
+
+These screenshots use sanitized sample data and do not show real cluster hosts, IP addresses, users, or jobs.
+
+![Sanitized dashboard screenshot](docs/assets/sample-dashboard.png)
+
+![Sanitized tooltip screenshot](docs/assets/sample-tooltip.png)
+
 ## Requirements
 
 - Node.js 18 or newer
