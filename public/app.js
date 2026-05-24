@@ -10,7 +10,6 @@ const medianRuntimeEl = document.querySelector("#medianRuntime");
 const longestRuntimeEl = document.querySelector("#longestRuntime");
 const successRateEl = document.querySelector("#successRate");
 const problemJobsEl = document.querySelector("#problemJobs");
-const sourceEl = document.querySelector("#source");
 const resetZoomButton = document.querySelector("#resetZoom");
 const stateLegendEl = document.querySelector("#stateLegend");
 const userFilterEl = document.querySelector("#userFilter");
@@ -309,7 +308,6 @@ function updateSummary() {
   longestRuntimeEl.textContent = formatRuntime(runtimes.length ? Math.max(...runtimes) : null);
   successRateEl.textContent = successRate == null ? "-" : `${successRate}%`;
   problemJobsEl.textContent = problemJobs.toLocaleString();
-  sourceEl.textContent = lastPayload?.source || "-";
   updateDatasetMeta();
   updateStatusText(currentJobs.length);
 }
