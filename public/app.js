@@ -4,9 +4,12 @@ const form = document.querySelector("#filters");
 const tooltip = document.querySelector("#tooltip");
 const daysEl = document.querySelector("#days");
 const statusEl = document.querySelector("#status");
+const datasetMetaEl = document.querySelector("#datasetMeta");
 const jobCountEl = document.querySelector("#jobCount");
 const medianRuntimeEl = document.querySelector("#medianRuntime");
-const p95RuntimeEl = document.querySelector("#p95Runtime");
+const longestRuntimeEl = document.querySelector("#longestRuntime");
+const successRateEl = document.querySelector("#successRate");
+const problemJobsEl = document.querySelector("#problemJobs");
 const sourceEl = document.querySelector("#source");
 const resetZoomButton = document.querySelector("#resetZoom");
 const stateLegendEl = document.querySelector("#stateLegend");
@@ -55,6 +58,19 @@ function formatDate(value) {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatDateRange(start, end) {
+  if (!start || !end) return "-";
+
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
 }
 
 function escapeHtml(value) {
@@ -180,6 +196,15 @@ function updateStatusText(visibleCount) {
   statusEl.textContent = sourceText;
 }
 
+function updateDatasetMeta() {
+  const selectedUser = userFilterEl.value || "All users";
+  const selectedWindow = daysEl.options[daysEl.selectedIndex]?.textContent || `${daysEl.value} days`;
+  const source = lastPayload?.source || "-";
+  const range = fullTimeRange ? formatDateRange(fullTimeRange.min, fullTimeRange.max) : "-";
+
+  datasetMetaEl.textContent = `${selectedWindow} · ${selectedUser} · ${source} · ${range}`;
+}
+
 function drawChart(jobs) {
   resizeCanvas();
 
@@ -275,10 +300,17 @@ function drawChart(jobs) {
 
 function updateSummary() {
   const runtimes = currentJobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
+  const completedJobs = currentJobs.filter((job) => normalizeState(job.state) === "COMPLETED").length;
+  const problemJobs = Math.max(0, currentJobs.length - completedJobs);
+  const successRate = currentJobs.length ? Math.round((completedJobs / currentJobs.length) * 100) : null;
+
   jobCountEl.textContent = currentJobs.length.toLocaleString();
   medianRuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.5));
-  p95RuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.95));
+  longestRuntimeEl.textContent = formatRuntime(runtimes.length ? Math.max(...runtimes) : null);
+  successRateEl.textContent = successRate == null ? "-" : `${successRate}%`;
+  problemJobsEl.textContent = problemJobs.toLocaleString();
   sourceEl.textContent = lastPayload?.source || "-";
+  updateDatasetMeta();
   updateStatusText(currentJobs.length);
 }
 
