@@ -35,11 +35,11 @@ By default the app listens on all interfaces:
 http://0.0.0.0:3017
 ```
 
-Browse to the server by hostname or IP:
+Browse to the server by hostname or IP address:
 
 ```text
-http://head-node-name:3017
-http://10.21.0.110:3017
+http://your-head-node.example.edu:3017
+http://your-head-node-ip:3017
 ```
 
 ## Configuration
@@ -100,4 +100,3 @@ Syntax-check the JavaScript:
 node --check server.js
 node --check public/app.js
 ```
-

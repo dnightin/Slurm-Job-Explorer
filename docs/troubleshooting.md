@@ -25,7 +25,7 @@ sudo iptables -I INPUT -p tcp --dport 3017 -j ACCEPT
 From Windows, test TCP directly:
 
 ```powershell
-Test-NetConnection hpc.wellesley.edu -Port 3017
+Test-NetConnection your-head-node.example.edu -Port 3017
 ```
 
 ## Browser Shows Sample Data
@@ -60,4 +60,3 @@ Possible causes:
 - Selected user has no jobs in the selected window
 - `sacct` returned rows without parseable start, submit, or end timestamps
 - `limit` is too low for the jobs you expect to see
-
