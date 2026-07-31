@@ -4,7 +4,8 @@
   "private": true,
   "description": "A small web app for exploring Slurm sacct job history.",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

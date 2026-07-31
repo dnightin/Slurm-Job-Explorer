@@ -108,3 +108,9 @@ Syntax-check the JavaScript:
 node --check server.js
 node --check public/app.js
 ```
+
+Run the unit tests (Node's built-in test runner, no extra dependencies):
+
+```bash
+npm test
+```

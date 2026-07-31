@@ -31,6 +31,7 @@ function sendJson(res, status, payload) {
 }
 
 function sanitizeNumber(value, fallback, min, max) {
+  if (value === null || value === undefined || value === "") return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
@@ -178,12 +179,16 @@ function formatSeconds(totalSeconds) {
   return days ? `${days}-${clock}` : clock;
 }
 
-const VALID_USER_PATTERN = /^[A-Za-z0-9_.,-]{1,256}$/;
+const VALID_USER_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 
 function sanitizeUser(value) {
   const trimmed = String(value || "").trim();
-  if (!trimmed || !VALID_USER_PATTERN.test(trimmed)) return "";
-  return trimmed;
+  if (!trimmed) return "";
+
+  const segments = trimmed.split(",").map((segment) => segment.trim());
+  if (!segments.every((segment) => VALID_USER_SEGMENT.test(segment))) return "";
+
+  return segments.join(",");
 }
 
 function fetchSacctJobs(query) {
@@ -255,7 +260,7 @@ function serveStatic(req, res) {
   const requestPath = rawPath === "/" ? "/index.html" : rawPath;
   const resolvedPath = path.normalize(path.join(PUBLIC_DIR, requestPath));
 
-  if (!resolvedPath.startsWith(PUBLIC_DIR)) {
+  if (resolvedPath !== PUBLIC_DIR && !resolvedPath.startsWith(PUBLIC_DIR + path.sep)) {
     send(res, 403, "Forbidden", { "Content-Type": "text/plain; charset=utf-8" });
     return;
   }
@@ -272,17 +277,36 @@ function serveStatic(req, res) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+function createServer() {
+  return http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
 
-  if (url.pathname === "/api/jobs") {
-    sendJson(res, 200, await fetchSacctJobs(url.searchParams));
-    return;
-  }
+    if (url.pathname === "/api/jobs") {
+      sendJson(res, 200, await fetchSacctJobs(url.searchParams));
+      return;
+    }
 
-  serveStatic(req, res);
-});
+    serveStatic(req, res);
+  });
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`Slurm Job History Explorer listening on http://${HOST}:${PORT}`);
-});
+if (require.main === module) {
+  const server = createServer();
+  server.listen(PORT, HOST, () => {
+    console.log(`Slurm Job History Explorer listening on http://${HOST}:${PORT}`);
+  });
+}
+
+module.exports = {
+  sanitizeNumber,
+  sanitizeUser,
+  parseDurationToSeconds,
+  parseSacctDate,
+  formatSacctDate,
+  getJobStartMs,
+  filterJobsByWindow,
+  parseSacctRows,
+  createSampleJobs,
+  formatSeconds,
+  createServer,
+};
