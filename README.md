@@ -1,15 +1,18 @@
 # Slurm Job History Explorer
 
+![CI](https://github.com/dnightin/Slurm-Job-Explorer/actions/workflows/ci.yml/badge.svg)
+
 A small Node.js web app for exploring Slurm `sacct` history in a browser. The first view is a runtime scatter plot that helps spot long-running jobs, failures, timeouts, and user-specific patterns.
 
 ## Features
 
 - Pulls job allocation data from `sacct`
 - Graphs job runtime by start time
-- Color-codes points by Slurm state
+- Color-codes points by Slurm state, using a categorical palette validated for color-vision-deficiency separation
 - Filters by time window, row limit, and user
-- Mousewheel zooms the chart time range
+- Mousewheel or pinch-to-zoom scales the chart time range
 - Hover tooltips show job details
+- Accessible data table alternative to the chart, for keyboard and screen-reader users
 - Falls back to sample data if `sacct` is unavailable
 
 ## Screenshots
@@ -101,3 +104,5 @@ Run the unit tests (Node's built-in test runner, no extra dependencies):
 ```bash
 npm test
 ```
+
+GitHub Actions runs `node --check` and `npm test` on Node 18.x and 20.x for every push and pull request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
