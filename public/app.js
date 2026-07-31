@@ -34,13 +34,7 @@ const STATE_STYLES = {
   OTHER: { label: "Other", fill: "rgba(102, 115, 109, 0.72)", stroke: "#4f5a55" },
 };
 
-const RUNTIME_BUCKETS = [
-  { label: "0-12 hours", maxSeconds: 12 * 60 * 60, radius: 4 },
-  { label: "13-72 hours", maxSeconds: 72 * 60 * 60, radius: 6 },
-  { label: "73 hours-1 week", maxSeconds: 7 * 24 * 60 * 60, radius: 8 },
-  { label: "2 weeks", maxSeconds: 28 * 24 * 60 * 60, radius: 10 },
-  { label: "28+ days", maxSeconds: Infinity, radius: 13 },
-];
+const POINT_RADIUS = 6;
 
 let plottedPoints = [];
 let loadedJobs = [];
@@ -108,11 +102,6 @@ function normalizeState(state) {
 
 function getStateStyle(state) {
   return STATE_STYLES[normalizeState(state)];
-}
-
-function getRuntimeBucket(runtimeSeconds) {
-  const bucket = RUNTIME_BUCKETS.findIndex((range) => runtimeSeconds <= range.maxSeconds);
-  return bucket === -1 ? RUNTIME_BUCKETS.length - 1 : bucket;
 }
 
 function renderStateLegend(jobs) {
@@ -319,19 +308,16 @@ function drawChart(jobs) {
   datedJobs.forEach((job) => {
     const x = xFor(job.startMs);
     const y = yFor(job.runtimeSeconds);
-    const bucket = getRuntimeBucket(job.runtimeSeconds);
-    const runtimeBucket = RUNTIME_BUCKETS[bucket];
-    const radius = runtimeBucket.radius;
     const stateStyle = getStateStyle(job.state);
 
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.arc(x, y, POINT_RADIUS, 0, Math.PI * 2);
     ctx.fillStyle = stateStyle.fill;
     ctx.fill();
     ctx.strokeStyle = stateStyle.stroke;
     ctx.stroke();
 
-    plottedPoints.push({ x, y, radius: radius + 4, job, bucket: runtimeBucket });
+    plottedPoints.push({ x, y, radius: POINT_RADIUS + 4, job });
   });
 }
 
@@ -433,7 +419,6 @@ chart.addEventListener("mousemove", (event) => {
   tooltip.innerHTML = `
     <strong>${escapeHtml(hit.job.jobId)} · ${escapeHtml(hit.job.jobName || "job")}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
-    Runtime size: ${hit.bucket.label}<br>
     State: ${escapeHtml(hit.job.state || "Unknown")}<br>
     User: ${escapeHtml(hit.job.user || "Unknown")}<br>
     Start: ${formatDate(hit.job.start)}

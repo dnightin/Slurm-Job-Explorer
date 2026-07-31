@@ -7,7 +7,6 @@ A small Node.js web app for exploring Slurm `sacct` history in a browser. The fi
 - Pulls job allocation data from `sacct`
 - Graphs job runtime by start time
 - Color-codes points by Slurm state
-- Sizes points by fixed runtime buckets
 - Filters by time window, row limit, and user
 - Mousewheel zooms the chart time range
 - Hover tooltips show job details
@@ -74,18 +73,6 @@ The `sacct` query requests allocation rows using:
 ```text
 JobIDRaw, JobName, User, Account, Partition, State, Submit, Start, End, Elapsed, AllocCPUS, TotalCPU, MaxRSS
 ```
-
-## Runtime Buckets
-
-Point size is based on elapsed runtime:
-
-| Bucket | Runtime |
-| --- | --- |
-| 1 | `0-12 hours` |
-| 2 | `13-72 hours` |
-| 3 | `73 hours-1 week` |
-| 4 | `2 weeks` |
-| 5 | `28+ days` |
 
 ## Documentation
 

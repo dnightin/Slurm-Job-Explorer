@@ -24,14 +24,12 @@ Each point is a Slurm job allocation.
 - X-axis: job start time
 - Y-axis: elapsed runtime
 - Color: job state
-- Size: runtime bucket
 
 Hover a point to see:
 
 - Job ID
 - Job name
 - Runtime
-- Runtime size bucket
 - State
 - User
 - Start time
