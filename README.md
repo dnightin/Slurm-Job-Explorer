@@ -27,7 +27,8 @@ These screenshots use sanitized sample data and do not show real cluster hosts, 
 
 - Node.js 18 or newer
 - Slurm accounting configured on the host
-- `sacct` available in the service user's `PATH`
+- `sacct` available in the service user's `PATH`, and that user has Slurm accounting read access (not just `sacct` on `PATH` — see [Troubleshooting](docs/troubleshooting.md#sacct-succeeds-but-returns-no-jobs) if `sacct` exits cleanly but every query returns zero jobs)
+- No built-in authentication — see [Deployment](docs/deployment.md#access-control) for how to restrict access
 
 No npm package install is required for the current app. It uses only Node built-ins and browser-native canvas.
 

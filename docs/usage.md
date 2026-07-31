@@ -34,10 +34,14 @@ Hover a point to see:
 - User
 - Start time
 
-## Mousewheel Zoom
+## Zooming
 
-Use the mousewheel over the chart to scale the visible time range:
+Scale the visible time range with the mousewheel, or a two-finger pinch on a touchscreen:
 
-- Wheel up: zoom in around the cursor
-- Wheel down: zoom out around the cursor
+- Wheel up / pinch out: zoom in around the cursor (or pinch midpoint)
+- Wheel down / pinch in: zoom out
 - `Reset zoom`: return to the full loaded time range
+
+## Accessibility
+
+The chart is a canvas element, so its data isn't directly readable by a keyboard or screen reader. A visually-hidden table with the same job data (ID, name, user, state, start, runtime) sits alongside it in the DOM at all times — it reflects the current filters but not the chart's zoom state, since zoom only changes what's visually plotted, not what data is loaded.

@@ -12,6 +12,15 @@ npm start
 
 The app binds to `0.0.0.0:3017` by default so other machines can connect if the network allows the port.
 
+## Access Control
+
+The app has no built-in authentication. Anyone who can reach `HOST:PORT` sees cluster-wide job data — usernames, job names, states, and resource usage for every user, not just their own. Treat this like any other unauthenticated internal tool: restrict who can reach the port rather than relying on the app itself.
+
+Options, roughly in order of effort:
+
+- **VPN/firewall-only access** (the pattern this repo assumes): keep `HOST=0.0.0.0` but rely on the head node's firewall and a campus VPN as the real access boundary — see [Firewall](#firewall). Anyone on the VPN can still see every user's job data; that's a deliberate trade-off for a shared HPC dashboard, worth confirming is the one you want rather than an oversight.
+- **Bind to localhost and put a reverse proxy in front** with its own authentication (HTTP basic auth, SSO, etc.) if you need per-user access control instead of network-level gating — see [Local-Only Binding](#local-only-binding).
+
 ## Running On Another Port
 
 ```bash
@@ -53,7 +62,7 @@ sudo iptables-save | sudo tee /etc/sysconfig/iptables
 
 ## systemd Example
 
-Create `/etc/systemd/system/slurm-job-explorer.service`:
+Create `/etc/systemd/system/slurm-job-explorer.service`. Run it as a dedicated, non-root service account rather than root — but that account needs Slurm accounting read access (an `sacctmgr` operator/coordinator role, or equivalent), or every query will silently return zero jobs even though `sacct` exits cleanly. See [Troubleshooting](troubleshooting.md#sacct-succeeds-but-returns-no-jobs).
 
 ```ini
 [Unit]
@@ -62,6 +71,7 @@ After=network.target
 
 [Service]
 Type=simple
+User=slurm-explorer
 WorkingDirectory=/opt/Slurm-Job-Explorer
 Environment=PORT=3017
 Environment=HOST=0.0.0.0
