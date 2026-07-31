@@ -42,6 +42,21 @@ sacct --parsable2 --noheader --allocations --starttime now-1days --endtime now -
 
 If `sacct` works in your shell but not in the service, make sure the service user has the same Slurm environment and `PATH`.
 
+## sacct Succeeds But Returns No Jobs
+
+The API can report `{"source":"sacct","warning":null,"jobs":[]}` even when jobs exist in the selected window. `sacct` exits `0` and produces no error text in this case, so the app has no way to distinguish it from "no jobs in this window" — it looks identical to an empty chart.
+
+The most common cause is running the Node process as a service account that can query Slurm but does not have accounting permissions for other users' jobs, so `sacct` silently returns rows only for jobs owned by that account (often none).
+
+Check:
+
+```bash
+whoami
+sacct --parsable2 --noheader --allocations --starttime now-1days --endtime now --format JobIDRaw,User
+```
+
+If that comes back empty while running as the service user, but returns rows when run as your own account (or as a user known to have accounting read access), the service user needs Slurm accounting permissions — either run the service as a user with cluster-wide `sacct` visibility, or grant the service account an operator/coordinator role in `sacctmgr`.
+
 ## Window Shows Unexpected Data
 
 The server filters jobs by parsed start time. If the chart still looks wrong, inspect the API response directly:
