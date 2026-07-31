@@ -333,6 +333,7 @@ function positionTooltip(hit) {
 
 async function loadJobs() {
   const params = new URLSearchParams(new FormData(form));
+  const requestedUser = params.get("user") || "";
   statusEl.textContent = "Loading job history...";
   tooltip.hidden = true;
 
@@ -342,9 +343,17 @@ async function loadJobs() {
     const payload = await response.json();
     lastPayload = payload;
     loadedJobs = payload.jobs;
-    renderUserFilter(loadedJobs);
+    // The server already scopes jobs to requestedUser (if set), so only an
+    // unfiltered fetch reflects the full set of users for this window.
+    if (!requestedUser) {
+      renderUserFilter(loadedJobs);
+    }
     applyFilters();
   } catch (error) {
+    lastPayload = null;
+    loadedJobs = [];
+    renderUserFilter(loadedJobs);
+    applyFilters();
     statusEl.textContent = error.message;
   }
 }
@@ -362,11 +371,11 @@ chart.addEventListener("mousemove", (event) => {
 
   tooltip.hidden = false;
   tooltip.innerHTML = `
-    <strong>${hit.job.jobId} · ${hit.job.jobName || "job"}</strong>
+    <strong>${escapeHtml(hit.job.jobId)} · ${escapeHtml(hit.job.jobName || "job")}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
     Runtime size: ${hit.bucket.label}<br>
-    State: ${hit.job.state || "Unknown"}<br>
-    User: ${hit.job.user || "Unknown"}<br>
+    State: ${escapeHtml(hit.job.state || "Unknown")}<br>
+    User: ${escapeHtml(hit.job.user || "Unknown")}<br>
     Start: ${formatDate(hit.job.start)}
   `;
   positionTooltip(hit);
@@ -426,7 +435,7 @@ daysEl.addEventListener("change", () => {
 
 userFilterEl.addEventListener("change", () => {
   tooltip.hidden = true;
-  applyFilters();
+  loadJobs();
 });
 
 window.addEventListener("resize", () => drawChart(currentJobs));

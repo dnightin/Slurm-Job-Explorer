@@ -178,9 +178,18 @@ function formatSeconds(totalSeconds) {
   return days ? `${days}-${clock}` : clock;
 }
 
+const VALID_USER_PATTERN = /^[A-Za-z0-9_.,-]{1,256}$/;
+
+function sanitizeUser(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed || !VALID_USER_PATTERN.test(trimmed)) return "";
+  return trimmed;
+}
+
 function fetchSacctJobs(query) {
   const days = sanitizeNumber(query.get("days"), 14, 1, 365);
   const limit = sanitizeNumber(query.get("limit"), 500, 10, 5000);
+  const user = sanitizeUser(query.get("user"));
   const requestedEnd = parseSacctDate(query.get("end")) || new Date();
   const requestedStart = parseSacctDate(query.get("start")) || new Date(requestedEnd.getTime() - days * 24 * 60 * 60 * 1000);
   const start = formatSacctDate(requestedStart);
@@ -214,10 +223,15 @@ function fetchSacctJobs(query) {
     end,
   ];
 
+  if (user) {
+    args.push("--user", user);
+  }
+
   return new Promise((resolve) => {
     execFile("sacct", args, { timeout: 20000, maxBuffer: 1024 * 1024 * 8 }, (error, stdout, stderr) => {
       if (error) {
-        const sampleJobs = filterJobsByWindow(createSampleJobs(), requestedStart, requestedEnd).slice(0, limit);
+        const sampleUserJobs = user ? createSampleJobs().filter((job) => job.user === user) : createSampleJobs();
+        const sampleJobs = filterJobsByWindow(sampleUserJobs, requestedStart, requestedEnd).slice(0, limit);
         resolve({
           source: "sample",
           warning: `sacct unavailable or failed: ${stderr || error.message}`,

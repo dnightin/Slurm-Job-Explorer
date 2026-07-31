@@ -9,9 +9,10 @@ Returns Slurm job allocation rows as JSON.
 | Parameter | Default | Description |
 | --- | --- | --- |
 | `days` | `14` | Time window ending now. Clamped from 1 to 365 |
-| `limit` | `500` | Maximum rows returned. Clamped from 10 to 5000 |
+| `limit` | `500` | Maximum rows returned **after** the `user` filter is applied. Clamped from 10 to 5000 |
 | `start` | derived from `days` | Optional explicit start date/time |
 | `end` | now | Optional explicit end date/time |
+| `user` | none | Optional Slurm username. Passed to `sacct --user` before the window filter and `limit` are applied. Ignored if it contains characters outside `A-Za-z0-9_.,-` |
 
 ### Response
 

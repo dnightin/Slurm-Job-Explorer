@@ -12,7 +12,7 @@ The images below use sanitized sample data for documentation.
 
 - `Window`: reloads data for the selected number of days.
 - `Limit`: caps the number of jobs returned by the API.
-- `User`: filters the currently loaded data to one user. The dropdown is populated from the returned `sacct` rows.
+- `User`: reloads data scoped to one Slurm user (`limit` applies to that user's jobs). The dropdown is populated from the most recent unfiltered load.
 - `Refresh`: reloads data using the current window and limit.
 
 Changing the `Window` dropdown reloads data immediately.
