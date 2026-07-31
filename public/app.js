@@ -10,9 +10,11 @@ const medianRuntimeEl = document.querySelector("#medianRuntime");
 const longestRuntimeEl = document.querySelector("#longestRuntime");
 const successRateEl = document.querySelector("#successRate");
 const problemJobsEl = document.querySelector("#problemJobs");
+const problemJobsCaptionEl = document.querySelector("#problemJobsCaption");
 const resetZoomButton = document.querySelector("#resetZoom");
 const stateLegendEl = document.querySelector("#stateLegend");
 const userFilterEl = document.querySelector("#userFilter");
+const jobsTableBodyEl = document.querySelector("#jobsTableBody");
 
 const STATE_STYLES = {
   COMPLETED: { label: "Completed", fill: "rgba(22, 122, 114, 0.78)", stroke: "#0d4e49" },
@@ -135,9 +137,25 @@ function getFilteredJobs() {
   return loadedJobs.filter((job) => job.user === selectedUser);
 }
 
+function renderAccessibleTable(jobs) {
+  jobsTableBodyEl.innerHTML = jobs
+    .map((job) => `
+      <tr>
+        <td>${escapeHtml(job.jobId)}</td>
+        <td>${escapeHtml(job.jobName || "-")}</td>
+        <td>${escapeHtml(job.user || "Unknown")}</td>
+        <td>${escapeHtml(job.state || "Unknown")}</td>
+        <td>${escapeHtml(formatDate(job.start))}</td>
+        <td>${escapeHtml(formatRuntime(job.runtimeSeconds))}</td>
+      </tr>
+    `)
+    .join("");
+}
+
 function applyFilters() {
   currentJobs = getFilteredJobs();
   renderStateLegend(currentJobs);
+  renderAccessibleTable(currentJobs);
   setFullTimeRange(currentJobs);
   updateSummary();
   drawChart(currentJobs);
@@ -195,13 +213,19 @@ function updateStatusText(visibleCount) {
   statusEl.textContent = sourceText;
 }
 
+function formatSourceLabel(source) {
+  if (source === "sample") return "sample data";
+  if (source === "sacct") return "live sacct data";
+  return source || "-";
+}
+
 function updateDatasetMeta() {
   const selectedUser = userFilterEl.value || "All users";
   const selectedWindow = daysEl.options[daysEl.selectedIndex]?.textContent || `${daysEl.value} days`;
-  const source = lastPayload?.source || "-";
+  const source = formatSourceLabel(lastPayload?.source);
   const range = fullTimeRange ? formatDateRange(fullTimeRange.min, fullTimeRange.max) : "-";
 
-  datasetMetaEl.textContent = `${selectedWindow} · ${selectedUser} · ${source} · ${range}`;
+  datasetMetaEl.textContent = `Window: ${selectedWindow} · User: ${selectedUser} · Source: ${source} · Range: ${range}`;
 }
 
 function drawChart(jobs) {
@@ -229,7 +253,7 @@ function drawChart(jobs) {
   updateStatusText(datedJobs.length);
 
   if (!datedJobs.length) {
-    ctx.fillStyle = "#66736d";
+    ctx.fillStyle = "#57645e";
     ctx.font = "700 16px system-ui";
     ctx.fillText("No runtime data found for this window.", padding.left, padding.top + 20);
     return;
@@ -297,17 +321,30 @@ function drawChart(jobs) {
   });
 }
 
+const NON_COMPLETED_STATE_ORDER = ["FAILED", "TIMEOUT", "CANCELLED", "PENDING", "RUNNING", "OTHER"];
+
 function updateSummary() {
   const runtimes = currentJobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
-  const completedJobs = currentJobs.filter((job) => normalizeState(job.state) === "COMPLETED").length;
+  const stateCounts = currentJobs.reduce((counts, job) => {
+    const state = normalizeState(job.state);
+    counts[state] = (counts[state] || 0) + 1;
+    return counts;
+  }, {});
+  const completedJobs = stateCounts.COMPLETED || 0;
   const problemJobs = Math.max(0, currentJobs.length - completedJobs);
   const successRate = currentJobs.length ? Math.round((completedJobs / currentJobs.length) * 100) : null;
+  const problemBreakdown = NON_COMPLETED_STATE_ORDER
+    .filter((state) => stateCounts[state])
+    .map((state) => `${STATE_STYLES[state].label} ${stateCounts[state]}`)
+    .join(" · ");
 
   jobCountEl.textContent = currentJobs.length.toLocaleString();
   medianRuntimeEl.textContent = formatRuntime(quantile(runtimes, 0.5));
   longestRuntimeEl.textContent = formatRuntime(runtimes.length ? Math.max(...runtimes) : null);
   successRateEl.textContent = successRate == null ? "-" : `${successRate}%`;
   problemJobsEl.textContent = problemJobs.toLocaleString();
+  problemJobsCaptionEl.textContent = problemBreakdown || "non-completed";
+  problemJobsCaptionEl.title = problemBreakdown;
   updateDatasetMeta();
   updateStatusText(currentJobs.length);
 }
@@ -362,7 +399,15 @@ chart.addEventListener("mousemove", (event) => {
   const rect = chart.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
-  const hit = plottedPoints.find((point) => Math.hypot(point.x - x, point.y - y) <= point.radius);
+  let hit = null;
+  let hitDistance = Infinity;
+  for (const point of plottedPoints) {
+    const distance = Math.hypot(point.x - x, point.y - y);
+    if (distance <= point.radius && distance < hitDistance) {
+      hit = point;
+      hitDistance = distance;
+    }
+  }
 
   if (!hit) {
     tooltip.hidden = true;
@@ -416,6 +461,69 @@ chart.addEventListener("wheel", (event) => {
 
 chart.addEventListener("mouseleave", () => {
   tooltip.hidden = true;
+});
+
+let pinchState = null;
+
+function getTouchDistance(touches) {
+  return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+}
+
+function getTouchMidpoint(touches) {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2,
+  };
+}
+
+chart.addEventListener("touchstart", (event) => {
+  if (event.touches.length !== 2 || !fullTimeRange || !timeRange || !plotArea) return;
+
+  event.preventDefault();
+  tooltip.hidden = true;
+  pinchState = {
+    distance: getTouchDistance(event.touches),
+    range: { ...timeRange },
+  };
+}, { passive: false });
+
+chart.addEventListener("touchmove", (event) => {
+  if (!pinchState || event.touches.length !== 2) return;
+
+  event.preventDefault();
+
+  const rect = chart.getBoundingClientRect();
+  const midpoint = getTouchMidpoint(event.touches);
+  const pointerX = Math.max(plotArea.left, Math.min(plotArea.right, midpoint.x - rect.left));
+  const pointerRatio = (pointerX - plotArea.left) / Math.max(1, plotArea.right - plotArea.left);
+
+  const distance = getTouchDistance(event.touches);
+  const scale = pinchState.distance / Math.max(1, distance);
+  const baseSpan = pinchState.range.max - pinchState.range.min;
+  const fullSpan = fullTimeRange.max - fullTimeRange.min;
+  const minSpan = Math.max(60 * 1000, fullSpan / 500);
+  const nextSpan = Math.max(minSpan, Math.min(fullSpan, baseSpan * scale));
+  const anchor = pinchState.range.min + baseSpan * pointerRatio;
+
+  let nextMin = anchor - nextSpan * pointerRatio;
+  let nextMax = nextMin + nextSpan;
+
+  if (nextMin < fullTimeRange.min) {
+    nextMin = fullTimeRange.min;
+    nextMax = nextMin + nextSpan;
+  }
+
+  if (nextMax > fullTimeRange.max) {
+    nextMax = fullTimeRange.max;
+    nextMin = nextMax - nextSpan;
+  }
+
+  timeRange = { min: nextMin, max: nextMax };
+  drawChart(currentJobs);
+}, { passive: false });
+
+chart.addEventListener("touchend", (event) => {
+  if (event.touches.length < 2) pinchState = null;
 });
 
 resetZoomButton.addEventListener("click", () => {

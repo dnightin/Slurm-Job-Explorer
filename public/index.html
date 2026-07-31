@@ -60,7 +60,7 @@
         </article>
         <article>
           <span id="problemJobs">-</span>
-          <p>non-completed</p>
+          <p id="problemJobsCaption">non-completed</p>
         </article>
       </section>
 
@@ -75,12 +75,12 @@
             <div class="legend-stack">
               <div id="stateLegend" class="legend" aria-label="State color legend"></div>
               <div class="size-legend" aria-label="Runtime size legend">
-                <span>Runtime</span>
-                <i class="size-1" title="0-12 hours"></i>
-                <i class="size-2" title="13-72 hours"></i>
-                <i class="size-3" title="73 hours-1 week"></i>
-                <i class="size-4" title="2 weeks"></i>
-                <i class="size-5" title="28+ days"></i>
+                <span class="size-legend-title">Runtime</span>
+                <span class="size-item"><i class="size-1"></i>0-12h</span>
+                <span class="size-item"><i class="size-2"></i>13-72h</span>
+                <span class="size-item"><i class="size-3"></i>73h-1wk</span>
+                <span class="size-item"><i class="size-4"></i>2wk</span>
+                <span class="size-item"><i class="size-5"></i>28+d</span>
               </div>
             </div>
           </div>
@@ -88,6 +88,22 @@
         <div class="canvas-wrap">
           <canvas id="runtimeChart" width="1280" height="620" aria-label="Scatter plot of Slurm job runtimes"></canvas>
           <div id="tooltip" class="tooltip" hidden></div>
+        </div>
+        <div class="visually-hidden">
+          <table>
+            <caption>Job runtime data, accessible alternative to the chart above</caption>
+            <thead>
+              <tr>
+                <th scope="col">Job ID</th>
+                <th scope="col">Job name</th>
+                <th scope="col">User</th>
+                <th scope="col">State</th>
+                <th scope="col">Start</th>
+                <th scope="col">Runtime</th>
+              </tr>
+            </thead>
+            <tbody id="jobsTableBody"></tbody>
+          </table>
         </div>
       </section>
     </main>

@@ -3,7 +3,7 @@
   --bg: #f5f7f4;
   --panel: #ffffff;
   --ink: #17201c;
-  --muted: #66736d;
+  --muted: #57645e;
   --line: #dbe2dc;
   --accent: #167a72;
   --accent-dark: #0d4e49;
@@ -14,6 +14,18 @@
 
 * {
   box-sizing: border-box;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 body {
@@ -252,7 +264,17 @@ button:disabled {
 }
 
 .size-legend {
-  gap: 7px;
+  gap: 10px;
+}
+
+.size-legend-title {
+  font-weight: 700;
+}
+
+.size-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .size-legend i {
@@ -298,6 +320,7 @@ canvas {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+  touch-action: none;
 }
 
 .tooltip {
