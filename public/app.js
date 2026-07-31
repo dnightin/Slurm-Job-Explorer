@@ -16,13 +16,21 @@ const stateLegendEl = document.querySelector("#stateLegend");
 const userFilterEl = document.querySelector("#userFilter");
 const jobsTableBodyEl = document.querySelector("#jobsTableBody");
 
+// Categorical palette validated with the dataviz skill's validate_palette.js
+// (--pairs all, since points overlap freely in a scatter chart): all adjacent
+// and all-pairs checks clear except two documented, mitigated exceptions —
+// CVD separation in the 6-8 floor band (legal with secondary encoding, which
+// this chart has: the legend and tooltip always show the state as text, and
+// the accessible table lists it in plain text too) and sub-3:1 fill contrast
+// for Completed/Timeout against the white chart surface (mitigated the same
+// way, plus every dot carries a darker solid stroke ring for definition).
 const STATE_STYLES = {
-  COMPLETED: { label: "Completed", fill: "rgba(22, 122, 114, 0.78)", stroke: "#0d4e49" },
-  FAILED: { label: "Failed", fill: "rgba(193, 67, 67, 0.78)", stroke: "#8f2424" },
-  CANCELLED: { label: "Cancelled", fill: "rgba(112, 102, 173, 0.78)", stroke: "#4f4787" },
-  TIMEOUT: { label: "Timeout", fill: "rgba(197, 102, 47, 0.78)", stroke: "#8f3f18" },
-  RUNNING: { label: "Running", fill: "rgba(48, 112, 185, 0.78)", stroke: "#245380" },
-  PENDING: { label: "Pending", fill: "rgba(117, 126, 44, 0.78)", stroke: "#5d641f" },
+  COMPLETED: { label: "Completed", fill: "rgba(0, 131, 0, 0.78)", stroke: "#005100" },
+  FAILED: { label: "Failed", fill: "rgba(227, 73, 72, 0.78)", stroke: "#8d2d2d" },
+  CANCELLED: { label: "Cancelled", fill: "rgba(74, 58, 167, 0.78)", stroke: "#2e2468" },
+  TIMEOUT: { label: "Timeout", fill: "rgba(237, 161, 0, 0.78)", stroke: "#936400" },
+  RUNNING: { label: "Running", fill: "rgba(42, 120, 214, 0.78)", stroke: "#1a4a85" },
+  PENDING: { label: "Pending", fill: "rgba(27, 175, 122, 0.78)", stroke: "#116d4c" },
   OTHER: { label: "Other", fill: "rgba(102, 115, 109, 0.72)", stroke: "#4f5a55" },
 };
 
@@ -255,7 +263,13 @@ function drawChart(jobs) {
   if (!datedJobs.length) {
     ctx.fillStyle = "#57645e";
     ctx.font = "700 16px system-ui";
-    ctx.fillText("No runtime data found for this window.", padding.left, padding.top + 20);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      "No runtime data found for this window.",
+      (plotArea.left + plotArea.right) / 2,
+      (plotArea.top + plotArea.bottom) / 2
+    );
     return;
   }
 
@@ -415,6 +429,7 @@ chart.addEventListener("mousemove", (event) => {
   }
 
   tooltip.hidden = false;
+  tooltip.style.borderLeftColor = getStateStyle(hit.job.state).stroke;
   tooltip.innerHTML = `
     <strong>${escapeHtml(hit.job.jobId)} · ${escapeHtml(hit.job.jobName || "job")}</strong>
     Runtime: ${formatRuntime(hit.job.runtimeSeconds)}<br>
