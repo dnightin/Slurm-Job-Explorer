@@ -2,7 +2,7 @@
 
 ## `GET /api/jobs`
 
-Returns Slurm job allocation rows as JSON.
+Returns Slurm jobs as JSON, one entry per job allocation. Job step rows are read only to find each job's peak memory.
 
 ### Query Parameters
 
@@ -40,13 +40,16 @@ When more jobs match than `limit`, the newest jobs (by start time) are returned.
       "allocCpus": 16,
       "totalCpu": "11:20:00",
       "maxRss": "3200M",
+      "maxRssBytes": 3355443200,
+      "cpuEfficiency": 0.99,
+      "waitSeconds": 60,
       "startMs": 1779530460000
     }
   ]
 }
 ```
 
-Jobs are sorted newest first. `total` is the number of jobs in the window before `limit` was applied, and `truncated` is `true` when some were left out. `startMs` is the time the server dated the job by (Start, else Submit, else End) in epoch milliseconds; the chart plots this value.
+Jobs are sorted newest first. `total` is the number of jobs in the window before `limit` was applied, and `truncated` is `true` when some were left out. `maxRssBytes` is the largest `MaxRSS` across the job's steps, in bytes. `cpuEfficiency` is `TotalCPU / (Elapsed × AllocCPUS)` as a fraction, or `null` for jobs that are pending, running, or have no CPU time. `waitSeconds` is Start minus Submit, or `null` if the job hasn't started. `startMs` is the time the server dated the job by (Start, else Submit, else End) in epoch milliseconds; the chart plots this value.
 
 In demo mode (`npm run demo` or `DEMO_MODE=1`) the response has `"source": "sample"` and a `warning` saying the data is generated.
 

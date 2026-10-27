@@ -58,6 +58,14 @@
           <p>longest runtime</p>
         </article>
         <article>
+          <span id="medianEfficiency">-</span>
+          <p>median CPU efficiency</p>
+        </article>
+        <article>
+          <span id="medianWait">-</span>
+          <p>median queue wait</p>
+        </article>
+        <article>
           <span id="successRate">-</span>
           <p>completed</p>
         </article>
@@ -70,10 +78,19 @@
       <section class="chart-panel">
         <div class="chart-head">
           <div>
-            <h2>Runtime by start time</h2>
+            <h2 id="chartTitle">Runtime by start time</h2>
             <p id="status">Loading job history...</p>
           </div>
           <div class="chart-actions">
+            <label class="metric-picker">
+              Y-axis
+              <select id="metric">
+                <option value="runtime" selected>Runtime</option>
+                <option value="wait">Queue wait</option>
+                <option value="efficiency">CPU efficiency</option>
+                <option value="memory">Peak memory</option>
+              </select>
+            </label>
             <label class="toggle">
               <input id="logScale" type="checkbox">
               Log scale
@@ -99,6 +116,9 @@
                 <th scope="col">State</th>
                 <th scope="col">Start</th>
                 <th scope="col">Runtime</th>
+                <th scope="col">CPU efficiency</th>
+                <th scope="col">Peak memory</th>
+                <th scope="col">Queue wait</th>
               </tr>
             </thead>
             <tbody id="jobsTableBody"></tbody>

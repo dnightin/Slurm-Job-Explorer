@@ -128,10 +128,65 @@ function selectNewestJobs(jobs, startDate, endDate, limit) {
   };
 }
 
+const MEMORY_UNITS = { K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4, P: 1024 ** 5 };
+
+// sacct memory values look like "3200M", "1.50G" or "2048K"; a bare number is bytes.
+function parseMemoryToBytes(value) {
+  const match = /^(\d+(?:\.\d+)?)([KMGTP])?$/i.exec(String(value || "").trim());
+  if (!match) return null;
+  return Math.round(Number(match[1]) * (match[2] ? MEMORY_UNITS[match[2].toUpperCase()] : 1));
+}
+
+const NO_EFFICIENCY_STATES = new Set(["PENDING", "RUNNING", "REQUEUED", "RESIZING", "SUSPENDED"]);
+
+// TotalCPU covers finished steps only, so jobs still running or never started
+// have no meaningful efficiency yet.
+function computeCpuEfficiency({ state, runtimeSeconds, allocCpus, totalCpu }) {
+  const totalCpuSeconds = parseDurationToSeconds(totalCpu);
+  const baseState = String(state || "").split(" ")[0];
+  if (totalCpuSeconds == null || !runtimeSeconds || !allocCpus || NO_EFFICIENCY_STATES.has(baseState)) return null;
+  return totalCpuSeconds / (runtimeSeconds * allocCpus);
+}
+
+function computeWaitSeconds({ submit, start }) {
+  const submitDate = parseSacctDate(submit);
+  const startDate = parseSacctDate(start);
+  if (!submitDate || !startDate) return null;
+  return Math.max(0, (startDate - submitDate) / 1000);
+}
+
+function addDerivedMetrics(job) {
+  return {
+    ...job,
+    cpuEfficiency: computeCpuEfficiency(job),
+    waitSeconds: computeWaitSeconds(job),
+  };
+}
+
+// sacct reports MaxRSS on job steps ("123.batch", "123.0"), not on the
+// allocation row, so peak memory is the largest MaxRSS among a job's steps.
 function parseSacctRows(stdout) {
   const lines = stdout.split(/\r?\n/).filter(Boolean);
+  const stepPeakBytes = new Map();
+  const allocationLines = [];
 
-  return lines
+  for (const line of lines) {
+    const fields = line.split("|");
+    const [jobId] = fields;
+    const dot = jobId.indexOf(".");
+    if (dot === -1) {
+      allocationLines.push(line);
+      continue;
+    }
+
+    const bytes = parseMemoryToBytes(fields[12]);
+    const parentId = jobId.slice(0, dot);
+    if (bytes != null && bytes > (stepPeakBytes.get(parentId) ?? -1)) {
+      stepPeakBytes.set(parentId, bytes);
+    }
+  }
+
+  return allocationLines
     .map((line) => {
       const [
         jobId,
@@ -169,7 +224,11 @@ function parseSacctRows(stdout) {
         maxRss,
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((job) => addDerivedMetrics({
+      ...job,
+      maxRssBytes: stepPeakBytes.get(job.jobId) ?? parseMemoryToBytes(job.maxRss),
+    }));
 }
 
 function createSampleJobs() {
@@ -178,7 +237,11 @@ function createSampleJobs() {
   return Array.from({ length: 80 }, (_, index) => {
     const submittedAt = new Date(now - (80 - index) * 1000 * 60 * 45);
     const runtimeSeconds = Math.round(90 + Math.pow(index % 17, 1.8) * 70 + Math.random() * 900);
-    return {
+    const startedAt = new Date(Math.min(now - 60000, submittedAt.getTime() + 1000 * 60 * ((index * 37) % 180)));
+    const allocCpus = [1, 2, 4, 8, 16, 32][index % 6];
+    const efficiency = 0.15 + ((index * 37) % 80) / 100;
+    const maxRss = `${((index * 1777) % 7800) + 40}M`;
+    return addDerivedMetrics({
       jobId: String(12000 + index),
       jobName: ["align", "mpi-solve", "postproc", "train", "array"][index % 5],
       user: ["ada", "grace", "linus", "margaret"][index % 4],
@@ -186,14 +249,15 @@ function createSampleJobs() {
       partition: ["batch", "gpu", "debug"][index % 3],
       state: index % 13 === 5 ? "OUT_OF_MEMORY" : index % 29 === 7 ? "NODE_FAIL" : states[index % states.length],
       submit: submittedAt.toISOString(),
-      start: new Date(submittedAt.getTime() + 1000 * 60 * (index % 8)).toISOString(),
-      end: new Date(submittedAt.getTime() + runtimeSeconds * 1000).toISOString(),
+      start: startedAt.toISOString(),
+      end: new Date(startedAt.getTime() + runtimeSeconds * 1000).toISOString(),
       elapsed: formatSeconds(runtimeSeconds),
       runtimeSeconds,
-      allocCpus: [1, 2, 4, 8, 16, 32][index % 6],
-      totalCpu: "",
-      maxRss: "",
-    };
+      allocCpus,
+      totalCpu: formatSeconds(Math.round(runtimeSeconds * allocCpus * efficiency)),
+      maxRss,
+      maxRssBytes: parseMemoryToBytes(maxRss),
+    });
   });
 }
 
@@ -278,7 +342,6 @@ function fetchSacctJobs(options) {
     "--parsable2",
     "--noheader",
     "--duplicates",
-    "--allocations",
     "--format",
     fields,
     "--starttime",
@@ -391,6 +454,8 @@ module.exports = {
   selectNewestJobs,
   parseJobsQuery,
   parseSacctRows,
+  parseMemoryToBytes,
+  computeCpuEfficiency,
   createSampleJobs,
   createSampleResult,
   formatSeconds,

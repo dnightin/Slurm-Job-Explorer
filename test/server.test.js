@@ -15,6 +15,8 @@ const {
   selectNewestJobs,
   parseJobsQuery,
   parseSacctRows,
+  parseMemoryToBytes,
+  computeCpuEfficiency,
   createSampleResult,
   createServer,
 } = require("../server.js");
@@ -73,6 +75,43 @@ test("parseSacctRows drops rows with no jobId or unparseable elapsed", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].jobId, "123");
   assert.equal(rows[0].runtimeSeconds, 300);
+});
+
+test("parseMemoryToBytes handles sacct memory units", () => {
+  assert.equal(parseMemoryToBytes("2048K"), 2048 * 1024);
+  assert.equal(parseMemoryToBytes("3200M"), 3200 * 1024 ** 2);
+  assert.equal(parseMemoryToBytes("1.50G"), 1.5 * 1024 ** 3);
+  assert.equal(parseMemoryToBytes("512"), 512);
+  assert.equal(parseMemoryToBytes(""), null);
+  assert.equal(parseMemoryToBytes("n/a"), null);
+});
+
+test("computeCpuEfficiency divides CPU time by allocated core time", () => {
+  const job = { state: "COMPLETED", runtimeSeconds: 600, allocCpus: 4, totalCpu: "20:00.000" };
+  assert.equal(computeCpuEfficiency(job), 0.5);
+  assert.equal(computeCpuEfficiency({ ...job, state: "RUNNING" }), null);
+  assert.equal(computeCpuEfficiency({ ...job, allocCpus: 0 }), null);
+  assert.equal(computeCpuEfficiency({ ...job, runtimeSeconds: 0 }), null);
+  assert.equal(computeCpuEfficiency({ ...job, totalCpu: "" }), null);
+});
+
+test("parseSacctRows takes peak memory from job steps and computes wait time", () => {
+  const stdout = [
+    "200|sim|ada|acct|batch|COMPLETED|2026-07-31T00:00:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:15:00|",
+    "200.batch|batch|||||2026-07-31T00:10:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:14:00|1500M",
+    "200.extern|extern|||||2026-07-31T00:10:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:00:01|4K",
+    "200.0|mpi|||||2026-07-31T00:11:00|2026-07-31T00:11:00|2026-07-31T00:19:00|00:08:00|2|00:00:59|2G",
+    "201|idle|ada|acct|batch|PENDING|2026-07-31T00:00:00|Unknown|Unknown|00:00:00|1|00:00:00|",
+  ].join("\n");
+
+  const rows = parseSacctRows(stdout);
+  assert.deepEqual(rows.map((row) => row.jobId), ["200", "201"]);
+  assert.equal(rows[0].maxRssBytes, 2 * 1024 ** 3);
+  assert.equal(rows[0].waitSeconds, 600);
+  assert.equal(rows[0].cpuEfficiency, 0.75);
+  assert.equal(rows[1].maxRssBytes, null);
+  assert.equal(rows[1].waitSeconds, null);
+  assert.equal(rows[1].cpuEfficiency, null);
 });
 
 test("filterJobsByWindow keeps only jobs whose start falls in range", () => {
