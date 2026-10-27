@@ -12,7 +12,7 @@ const {
   parseSacctDate,
   formatSacctDate,
   filterJobsByWindow,
-  selectNewestJobs,
+  selectWindowJobs,
   parseJobsQuery,
   parseSacctRows,
   parseStepPeakMemory,
@@ -133,14 +133,14 @@ test("filterJobsByWindow keeps only jobs whose start falls in range", () => {
   assert.equal(result[0].start, "2026-07-31T12:00:00");
 });
 
-test("selectNewestJobs keeps the newest jobs, reports truncation, and adds startMs", () => {
+test("selectWindowJobs sorts newest first, reports truncation, and adds startMs", () => {
   const jobs = [
     { jobId: "1", start: "2026-07-31T01:00:00" },
     { jobId: "2", start: "2026-07-31T03:00:00" },
     { jobId: "3", start: "Unknown", submit: "2026-07-31T02:00:00" },
     { jobId: "4", start: "2026-08-05T00:00:00" },
   ];
-  const result = selectNewestJobs(
+  const result = selectWindowJobs(
     jobs,
     new Date(2026, 6, 31, 0, 0, 0),
     new Date(2026, 6, 31, 23, 59, 59),
@@ -150,6 +150,23 @@ test("selectNewestJobs keeps the newest jobs, reports truncation, and adds start
   assert.equal(result.total, 3);
   assert.equal(result.truncated, true);
   assert.equal(result.jobs[1].startMs, new Date(2026, 6, 31, 2, 0, 0).getTime());
+  assert.equal(result.windowStartMs, new Date(2026, 6, 31, 0, 0, 0).getTime());
+  assert.equal(result.windowEndMs, new Date(2026, 6, 31, 23, 59, 59).getTime());
+});
+
+test("selectWindowJobs samples evenly across the window when over the limit", () => {
+  // 100 jobs, one per hour; the newest-only approach would keep hours 90-99.
+  const base = new Date(2026, 6, 1, 0, 0, 0).getTime();
+  const jobs = Array.from({ length: 100 }, (_, hour) => ({
+    jobId: String(hour),
+    start: formatSacctDate(new Date(base + hour * 3600 * 1000)),
+  }));
+  const result = selectWindowJobs(jobs, new Date(base), new Date(base + 100 * 3600 * 1000), 10);
+
+  assert.equal(result.jobs.length, 10);
+  assert.equal(result.total, 100);
+  assert.equal(result.truncated, true);
+  assert.deepEqual(result.jobs.map((job) => job.jobId), ["99", "89", "79", "69", "59", "49", "39", "29", "19", "9"]);
 });
 
 test("parseJobsQuery rejects invalid users, dates, and oversized windows", () => {

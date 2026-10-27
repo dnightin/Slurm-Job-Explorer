@@ -80,4 +80,4 @@ Possible causes:
 - No jobs in the selected window
 - Selected user has no jobs in the selected window
 - `sacct` returned rows without parseable start, submit, or end timestamps
-- `limit` is too low for the jobs you expect to see (the status line says when the newest jobs were kept and older ones left out)
+- `limit` is too low for the jobs you expect to see (the status line says when the chart is showing a sample of the jobs in the window)
