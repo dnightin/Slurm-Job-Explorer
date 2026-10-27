@@ -11,7 +11,7 @@ The images below use sanitized sample data for documentation.
 ## Filters
 
 - `Window`: reloads data for the selected number of days.
-- `Limit`: caps the number of jobs returned by the API.
+- `Limit`: caps the number of jobs plotted. When the window holds more, the chart shows an evenly spaced sample across the whole window, and the status line says so. The time axis always spans the full window.
 - `User`: reloads data scoped to one Slurm user (`limit` applies to that user's jobs). The dropdown is populated from the most recent unfiltered load.
 - `Refresh`: reloads data using the current window and limit.
 

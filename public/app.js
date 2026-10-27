@@ -205,17 +205,20 @@ function getDatedJobs(jobs) {
   return jobs.filter((job) => Number.isFinite(job.startMs));
 }
 
+// The x-axis spans the window that was asked for, not just the jobs that came
+// back, so a quiet stretch shows as empty space rather than vanishing.
 function setFullTimeRange(jobs) {
   const datedJobs = getDatedJobs(jobs);
-  if (!datedJobs.length) {
+  const startMs = datedJobs.map((job) => job.startMs);
+  const min = Math.min(lastPayload?.windowStartMs ?? Infinity, ...startMs);
+  const max = Math.max(lastPayload?.windowEndMs ?? -Infinity, ...startMs);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
     fullTimeRange = null;
     timeRange = null;
     return;
   }
 
-  const min = Math.min(...datedJobs.map((job) => job.startMs));
-  const max = Math.max(...datedJobs.map((job) => job.startMs));
-  const pad = Math.max(1, (max - min) * 0.02);
+  const pad = Math.max(1, (max - min) * 0.005);
   fullTimeRange = { min: min - pad, max: max + pad };
   timeRange = { ...fullTimeRange };
 }
@@ -235,7 +238,7 @@ function updateStatusText(visibleCount, missingCount = 0) {
   const selectedUser = userFilterEl.value;
   const filteredText = selectedUser ? ` for ${selectedUser}` : "";
   const truncatedText = lastPayload.truncated
-    ? ` These are the newest ${loadedJobs.length.toLocaleString()} of ${lastPayload.total.toLocaleString()} jobs in the window; raise Limit to see more.`
+    ? ` That is a sample of ${loadedJobs.length.toLocaleString()} of the ${lastPayload.total.toLocaleString()} jobs in the window, spread evenly across it; raise Limit to see more.`
     : "";
   const sourceText = `Showing ${currentJobs.length.toLocaleString()} of ${loadedJobs.length.toLocaleString()} jobs${filteredText} from ${formatSourceLabel(lastPayload.source)}.${truncatedText}`;
   const missingText = missingCount

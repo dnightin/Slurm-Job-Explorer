@@ -113,18 +113,26 @@ function filterJobsByWindow(jobs, startDate, endDate) {
   });
 }
 
-// Newest first, so the row limit drops the oldest jobs rather than the newest.
-// Each job gets the startMs the server dated it by, so the browser plots the
-// same jobs the summary counts.
-function selectNewestJobs(jobs, startDate, endDate, limit) {
+// Jobs come back newest first. When the window holds more than `limit`
+// jobs, keep an evenly spaced sample across it rather than the newest ones:
+// on a busy cluster the newest 500 jobs can all fall in the last few hours,
+// which made every window look like one day. Each job gets the startMs the
+// server dated it by, so the browser plots the same jobs the summary counts.
+function selectWindowJobs(jobs, startDate, endDate, limit) {
   const windowJobs = filterJobsByWindow(jobs, startDate, endDate)
     .map((job) => ({ ...job, startMs: getJobStartMs(job) }))
     .sort((a, b) => b.startMs - a.startMs);
+  const truncated = windowJobs.length > limit;
+  const selected = truncated
+    ? Array.from({ length: limit }, (_, i) => windowJobs[Math.floor((i * windowJobs.length) / limit)])
+    : windowJobs;
 
   return {
-    jobs: windowJobs.slice(0, limit),
+    jobs: selected,
     total: windowJobs.length,
-    truncated: windowJobs.length > limit,
+    truncated,
+    windowStartMs: startDate.getTime(),
+    windowEndMs: endDate.getTime(),
   };
 }
 
@@ -310,7 +318,7 @@ function createSampleResult({ limit, user, start, end }) {
   return {
     source: "sample",
     warning: "Demo mode: showing generated sample data, not real cluster jobs.",
-    ...selectNewestJobs(sampleJobs, start, end, limit),
+    ...selectWindowJobs(sampleJobs, start, end, limit),
   };
 }
 
@@ -397,7 +405,7 @@ async function fetchSacctJobs(options, signal) {
   return addStepPeakMemory({
     source: "sacct",
     warning: null,
-    ...selectNewestJobs(parseSacctRows(stdout), options.start, options.end, limit),
+    ...selectWindowJobs(parseSacctRows(stdout), options.start, options.end, limit),
   }, signal);
 }
 
@@ -484,7 +492,7 @@ module.exports = {
   formatSacctDate,
   getJobStartMs,
   filterJobsByWindow,
-  selectNewestJobs,
+  selectWindowJobs,
   parseJobsQuery,
   parseSacctRows,
   parseStepPeakMemory,
