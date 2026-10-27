@@ -10,9 +10,11 @@ Returns Slurm job allocation rows as JSON.
 | --- | --- | --- |
 | `days` | `14` | Time window ending now. Clamped from 1 to 365 |
 | `limit` | `500` | Maximum rows returned **after** the `user` filter is applied. Clamped from 10 to 5000 |
-| `start` | derived from `days` | Optional explicit start date/time |
+| `start` | derived from `days` | Optional explicit start date/time. Must be before `end`, and the window can be at most 365 days |
 | `end` | now | Optional explicit end date/time |
-| `user` | none | Optional Slurm username. Passed to `sacct --user` before the window filter and `limit` are applied. Ignored if it contains characters outside `A-Za-z0-9_.,-` |
+| `user` | none | Optional Slurm username, or a comma-separated list. Passed to `sacct --user` before the window filter and `limit` are applied. Returns `400` if it contains characters outside `A-Za-z0-9_.,-` |
+
+When more jobs match than `limit`, the newest jobs (by start time) are returned.
 
 ### Response
 
@@ -20,6 +22,8 @@ Returns Slurm job allocation rows as JSON.
 {
   "source": "sacct",
   "warning": null,
+  "total": 1,
+  "truncated": false,
   "jobs": [
     {
       "jobId": "12345",
@@ -35,21 +39,29 @@ Returns Slurm job allocation rows as JSON.
       "runtimeSeconds": 2580,
       "allocCpus": 16,
       "totalCpu": "11:20:00",
-      "maxRss": "3200M"
+      "maxRss": "3200M",
+      "startMs": 1779530460000
     }
   ]
 }
 ```
 
-If `sacct` is unavailable, the server returns sample data with:
+Jobs are sorted newest first. `total` is the number of jobs in the window before `limit` was applied, and `truncated` is `true` when some were left out. `startMs` is the time the server dated the job by (Start, else Submit, else End) in epoch milliseconds; the chart plots this value.
+
+In demo mode (`npm run demo` or `DEMO_MODE=1`) the response has `"source": "sample"` and a `warning` saying the data is generated.
+
+### Errors
+
+Errors return JSON with an `error` message:
 
 ```json
-{
-  "source": "sample",
-  "warning": "sacct unavailable or failed: ...",
-  "jobs": []
-}
+{ "error": "sacct was not found on the server's PATH." }
 ```
+
+| Status | When |
+| --- | --- |
+| `400` | Invalid `user`, `start`, or `end`, `start` after `end`, or a window longer than 365 days |
+| `502` | `sacct` is missing, failed, timed out, or produced more output than `SACCT_MAX_BUFFER_MB`. Details are written to the server log |
 
 ## Server-Side Window Enforcement
 

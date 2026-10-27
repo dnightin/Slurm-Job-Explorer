@@ -28,9 +28,13 @@ From Windows, test TCP directly:
 Test-NetConnection your-head-node.example.edu -Port 3017
 ```
 
-## Browser Shows Sample Data
+## Browser Shows a sacct Error
 
-Sample data means `sacct` could not be executed successfully by the Node process.
+A red banner means `sacct` could not be run successfully by the Node process. The server log (for example `journalctl -u slurm-job-explorer`) has the full error text.
+
+- "not found on the server's PATH": the service user cannot find `sacct`.
+- "did not finish within N seconds": slurmdbd is slow or the window is large. Use a shorter window or raise `SACCT_TIMEOUT_MS`.
+- "output exceeded N MB": the window holds too many jobs. Use a shorter window or a user filter, or raise `SACCT_MAX_BUFFER_MB`.
 
 Check:
 
@@ -41,6 +45,8 @@ sacct --parsable2 --noheader --allocations --starttime now-1days --endtime now -
 ```
 
 If `sacct` works in your shell but not in the service, make sure the service user has the same Slurm environment and `PATH`.
+
+A yellow "Demo mode" banner means the server was started with `--demo` or `DEMO_MODE=1` and is showing generated data on purpose.
 
 ## sacct Succeeds But Returns No Jobs
 
@@ -74,4 +80,4 @@ Possible causes:
 - No jobs in the selected window
 - Selected user has no jobs in the selected window
 - `sacct` returned rows without parseable start, submit, or end timestamps
-- `limit` is too low for the jobs you expect to see
+- `limit` is too low for the jobs you expect to see (the status line says when the newest jobs were kept and older ones left out)

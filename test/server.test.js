@@ -1,5 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const net = require("node:net");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const {
   sanitizeNumber,
@@ -8,7 +12,11 @@ const {
   parseSacctDate,
   formatSacctDate,
   filterJobsByWindow,
+  selectNewestJobs,
+  parseJobsQuery,
   parseSacctRows,
+  createSampleResult,
+  createServer,
 } = require("../server.js");
 
 test("sanitizeNumber clamps to range and falls back on invalid input", () => {
@@ -25,9 +33,9 @@ test("sanitizeUser accepts valid Slurm usernames and rejects everything else", (
   assert.equal(sanitizeUser("user.name-1,other_user"), "user.name-1,other_user");
   assert.equal(sanitizeUser(""), "");
   assert.equal(sanitizeUser(null), "");
-  assert.equal(sanitizeUser("--user"), "");
-  assert.equal(sanitizeUser("bad user"), "");
-  assert.equal(sanitizeUser("bad;rm -rf"), "");
+  assert.equal(sanitizeUser("--user"), null);
+  assert.equal(sanitizeUser("bad user"), null);
+  assert.equal(sanitizeUser("bad;rm -rf"), null);
 });
 
 test("parseDurationToSeconds handles sacct elapsed formats", () => {
@@ -80,4 +88,146 @@ test("filterJobsByWindow keeps only jobs whose start falls in range", () => {
   );
   assert.equal(result.length, 1);
   assert.equal(result[0].start, "2026-07-31T12:00:00");
+});
+
+test("selectNewestJobs keeps the newest jobs, reports truncation, and adds startMs", () => {
+  const jobs = [
+    { jobId: "1", start: "2026-07-31T01:00:00" },
+    { jobId: "2", start: "2026-07-31T03:00:00" },
+    { jobId: "3", start: "Unknown", submit: "2026-07-31T02:00:00" },
+    { jobId: "4", start: "2026-08-05T00:00:00" },
+  ];
+  const result = selectNewestJobs(
+    jobs,
+    new Date(2026, 6, 31, 0, 0, 0),
+    new Date(2026, 6, 31, 23, 59, 59),
+    2
+  );
+  assert.deepEqual(result.jobs.map((job) => job.jobId), ["2", "3"]);
+  assert.equal(result.total, 3);
+  assert.equal(result.truncated, true);
+  assert.equal(result.jobs[1].startMs, new Date(2026, 6, 31, 2, 0, 0).getTime());
+});
+
+test("parseJobsQuery rejects invalid users, dates, and oversized windows", () => {
+  const parse = (query) => parseJobsQuery(new URLSearchParams(query));
+
+  assert.throws(() => parse("user=bad;user"), { status: 400 });
+  assert.throws(() => parse("start=not-a-date"), { status: 400 });
+  assert.throws(() => parse("start=2026-08-02T00:00:00&end=2026-08-01T00:00:00"), { status: 400 });
+  assert.throws(() => parse("start=1970-01-01T00:00:00&end=2026-08-01T00:00:00"), { status: 400 });
+
+  const options = parse("days=7&limit=50&user=ada,grace&end=2026-08-01T00:00:00");
+  assert.equal(options.limit, 50);
+  assert.equal(options.user, "ada,grace");
+  assert.equal(options.end - options.start, 7 * 24 * 60 * 60 * 1000);
+});
+
+test("createSampleResult filters by every user in a comma list", () => {
+  const end = new Date();
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const result = createSampleResult({ limit: 5000, user: "ada,grace", start, end });
+  const users = new Set(result.jobs.map((job) => job.user));
+  assert.equal(result.source, "sample");
+  assert.deepEqual([...users].sort(), ["ada", "grace"]);
+});
+
+// Puts a fake `sacct` shell script first on PATH for the duration of run().
+async function withFakeSacct(script, run) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-sacct-"));
+  fs.writeFileSync(path.join(dir, "sacct"), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${originalPath}`;
+  try {
+    await run();
+  } finally {
+    process.env.PATH = originalPath;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function withServer(run) {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await run(`http://127.0.0.1:${server.address().port}`, server.address().port);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function rawRequest(port, text) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, "127.0.0.1", () => socket.end(text));
+    let response = "";
+    socket.on("data", (chunk) => { response += chunk; });
+    socket.on("end", () => resolve(response));
+    socket.on("error", reject);
+  });
+}
+
+test("a malformed Host header does not crash the server", async () => {
+  await withServer(async (baseUrl, port) => {
+    const response = await rawRequest(port, "GET /api/jobs?user=bad%3B HTTP/1.1\r\nHost: a b\r\nConnection: close\r\n\r\n");
+    assert.match(response, /^HTTP\/1\.1 400/);
+
+    const followUp = await fetch(`${baseUrl}/`);
+    assert.equal(followUp.status, 200);
+  });
+});
+
+test("/api/jobs returns 400 for an invalid user", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/jobs?user=bad%3Buser`);
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Invalid user/);
+  });
+});
+
+test("/api/jobs returns 502 instead of sample data when sacct is missing", async () => {
+  const originalPath = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/jobs`);
+      assert.equal(response.status, 502);
+      assert.match((await response.json()).error, /not found/);
+    });
+  } finally {
+    process.env.PATH = originalPath;
+  }
+});
+
+test("/api/jobs returns the newest sacct rows with totals", { skip: process.platform === "win32" }, async () => {
+  const today = new Date();
+  const stamp = (hour) => formatSacctDate(new Date(today.getFullYear(), today.getMonth(), today.getDate(), hour));
+  const rows = [1, 2, 3].map((hour) =>
+    `${hour}|job${hour}|ada|acct|batch|COMPLETED|${stamp(hour)}|${stamp(hour)}|${stamp(hour)}|00:01:00|1|00:00:30|10M`
+  );
+  // Today's early hours fall in a 1-day window ending at end of day.
+  const end = formatSacctDate(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59));
+
+  await withFakeSacct(`printf '${rows.join("\\n")}\\n'`, async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/jobs?days=1&limit=10&end=${end}`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.source, "sacct");
+      assert.equal(payload.total, 3);
+      assert.equal(payload.truncated, false);
+      assert.deepEqual(payload.jobs.map((job) => job.jobId), ["3", "2", "1"]);
+      assert.ok(payload.jobs.every((job) => Number.isFinite(job.startMs)));
+    });
+  });
+});
+
+test("/api/jobs reports a sacct failure as 502 without leaking stderr", { skip: process.platform === "win32" }, async () => {
+  await withFakeSacct("echo 'secret slurmdbd host details' >&2; exit 1", async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/jobs`);
+      assert.equal(response.status, 502);
+      const { error } = await response.json();
+      assert.doesNotMatch(error, /secret/);
+    });
+  });
 });
