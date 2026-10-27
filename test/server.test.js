@@ -20,6 +20,7 @@ const {
   computeCpuEfficiency,
   createSampleResult,
   createServer,
+  clearSacctCache,
 } = require("../server.js");
 
 test("sanitizeNumber clamps to range and falls back on invalid input", () => {
@@ -207,6 +208,7 @@ async function withFakeSacct(script, run) {
 }
 
 async function withServer(run) {
+  clearSacctCache();
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -304,6 +306,59 @@ test("/api/jobs fetches peak memory with a second, job-scoped sacct query", { sk
       assert.equal(payload.jobs[0].maxRssBytes, 1024 ** 3);
     });
   });
+});
+
+test("narrower windows and single-user views reuse a cached sacct pull", { skip: process.platform === "win32" }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sacct-cache-"));
+  const rowsFile = path.join(dir, "rows.txt");
+  const callLog = path.join(dir, "calls.log");
+  const hoursAgo = (hours) => formatSacctDate(new Date(Date.now() - hours * 3600 * 1000));
+  // Two jobs a day for 20 days, alternating users.
+  const rows = Array.from({ length: 40 }, (_, i) => {
+    const at = hoursAgo(i * 12 + 1);
+    return `${500 + i}|job|${i % 2 ? "grace" : "ada"}|acct|batch|COMPLETED|${at}|${at}|${at}|00:10:00|1|00:05:00|`;
+  });
+  fs.writeFileSync(rowsFile, `${rows.join("\n")}\n`);
+  const script = [
+    `echo "$*" >> ${callLog}`,
+    'case "$*" in',
+    "  *--jobs*) exit 0 ;;",
+    `  *) cat ${rowsFile} ;;`,
+    "esac",
+  ].join("\n");
+  const mainCalls = () => fs.readFileSync(callLog, "utf8").split("\n").filter((line) => line.includes("--allocations")).length;
+  const jobsCalls = () => fs.readFileSync(callLog, "utf8").split("\n").filter((line) => line.includes("--jobs")).length;
+
+  await withFakeSacct(script, async () => {
+    await withServer(async (baseUrl) => {
+      const get = async (query) => (await fetch(`${baseUrl}/api/jobs?limit=5000&${query}`)).json();
+
+      const month = await get("days=30");
+      assert.equal(month.fromCache, false);
+      assert.equal(month.total, 40);
+      assert.equal(mainCalls(), 1);
+      assert.equal(jobsCalls(), 1);
+
+      const week = await get("days=7");
+      assert.equal(week.fromCache, true);
+      assert.equal(week.total, 14);
+      assert.equal(week.fetchedAt, month.fetchedAt);
+      assert.equal(mainCalls(), 1);
+      assert.equal(jobsCalls(), 1, "finished jobs' peak memory is remembered");
+
+      const ada = await get("days=7&user=ada");
+      assert.equal(ada.fromCache, true);
+      assert.ok(ada.jobs.every((job) => job.user === "ada"));
+      assert.equal(mainCalls(), 1);
+
+      assert.equal((await get("days=90")).fromCache, false);
+      assert.equal(mainCalls(), 2);
+
+      assert.equal((await get("days=7&refresh=1")).fromCache, false);
+      assert.equal(mainCalls(), 3);
+    });
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("an abandoned /api/jobs request stops its sacct process", { skip: process.platform === "win32" }, async () => {

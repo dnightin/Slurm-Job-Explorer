@@ -241,11 +241,18 @@ function updateStatusText(visibleCount, missingCount = 0) {
     ? ` That is a sample of ${loadedJobs.length.toLocaleString()} of the ${lastPayload.total.toLocaleString()} jobs in the window, spread evenly across it; raise Limit to see more.`
     : "";
   const sourceText = `Showing ${currentJobs.length.toLocaleString()} of ${loadedJobs.length.toLocaleString()} jobs${filteredText} from ${formatSourceLabel(lastPayload.source)}.${truncatedText}`;
+  const ageText = lastPayload.fromCache ? ` Pulled ${formatAge(Date.now() - lastPayload.fetchedAt)}; press Refresh for the latest.` : "";
   const missingText = missingCount
     ? ` ${missingCount.toLocaleString()} without a ${getMetric().noun} value ${missingCount === 1 ? "is" : "are"} not plotted.`
     : "";
   const zoomText = isZoomed() ? ` Zoomed to ${visibleCount.toLocaleString()} visible jobs.` : "";
-  statusEl.textContent = `${sourceText}${zoomText}${missingText}`;
+  statusEl.textContent = `${sourceText}${ageText}${zoomText}${missingText}`;
+}
+
+function formatAge(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "less than a minute ago";
+  return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
 }
 
 function formatSourceLabel(source) {
@@ -528,8 +535,9 @@ function positionTooltip(hit) {
 
 let activeRequest = null;
 
-async function loadJobs() {
+async function loadJobs({ refresh = false } = {}) {
   const params = new URLSearchParams(new FormData(form));
+  if (refresh) params.set("refresh", "1");
   const requestedUser = params.get("user") || "";
   statusEl.textContent = "Loading job history...";
   tooltip.hidden = true;
@@ -723,9 +731,11 @@ resetZoomButton.addEventListener("click", () => {
   drawChart(currentJobs);
 });
 
+// Refresh always asks sacct again; other changes may be served from the
+// server's recent pulls.
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  loadJobs();
+  loadJobs({ refresh: true });
 });
 
 daysEl.addEventListener("change", () => {
