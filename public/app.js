@@ -13,6 +13,7 @@ const successRateEl = document.querySelector("#successRate");
 const problemJobsEl = document.querySelector("#problemJobs");
 const problemJobsCaptionEl = document.querySelector("#problemJobsCaption");
 const resetZoomButton = document.querySelector("#resetZoom");
+const logScaleEl = document.querySelector("#logScale");
 const stateLegendEl = document.querySelector("#stateLegend");
 const userFilterEl = document.querySelector("#userFilter");
 const jobsTableBodyEl = document.querySelector("#jobsTableBody");
@@ -25,6 +26,9 @@ const jobsTableBodyEl = document.querySelector("#jobsTableBody");
 // the accessible table lists it in plain text too) and sub-3:1 fill contrast
 // for Completed/Timeout against the white chart surface (mitigated the same
 // way, plus every dot carries a darker solid stroke ring for definition).
+// Out of memory was added as a seventh hue and re-validated all-pairs: the
+// worst pair is unchanged. Node fail is a neutral like Other and is told
+// apart by its diamond shape rather than by an eighth hue.
 const STATE_STYLES = {
   COMPLETED: { label: "Completed", fill: "rgba(0, 131, 0, 0.78)", stroke: "#005100" },
   FAILED: { label: "Failed", fill: "rgba(227, 73, 72, 0.78)", stroke: "#8d2d2d" },
@@ -32,6 +36,8 @@ const STATE_STYLES = {
   TIMEOUT: { label: "Timeout", fill: "rgba(237, 161, 0, 0.78)", stroke: "#936400" },
   RUNNING: { label: "Running", fill: "rgba(42, 120, 214, 0.78)", stroke: "#1a4a85" },
   PENDING: { label: "Pending", fill: "rgba(27, 175, 122, 0.78)", stroke: "#116d4c" },
+  OUT_OF_MEMORY: { label: "Out of memory", fill: "rgba(176, 58, 140, 0.78)", stroke: "#6b2355" },
+  NODE_FAIL: { label: "Node fail", fill: "rgba(59, 69, 64, 0.78)", stroke: "#1f2622", shape: "diamond" },
   OTHER: { label: "Other", fill: "rgba(102, 115, 109, 0.72)", stroke: "#4f5a55" },
 };
 
@@ -112,7 +118,8 @@ function renderStateLegend(jobs) {
   stateLegendEl.innerHTML = orderedStates
     .map((state) => {
       const style = STATE_STYLES[state];
-      return `<span><i style="background:${style.fill}; border-color:${style.stroke}"></i>${style.label}</span>`;
+      const shapeClass = style.shape ? ` class="${style.shape}"` : "";
+      return `<span><i${shapeClass} style="background:${style.fill}; border-color:${style.stroke}"></i>${style.label}</span>`;
     })
     .join("");
 }
@@ -229,6 +236,45 @@ function updateDatasetMeta() {
   datasetMetaEl.textContent = `Window: ${selectedWindow} · User: ${selectedUser} · Source: ${source} · Range: ${range}`;
 }
 
+function createLinearScale(runtimes) {
+  const max = Math.max(60, Math.max(...runtimes) * 1.08);
+  return {
+    fraction: (value) => value / max,
+    ticks: [0, 1, 2, 3, 4].map((i) => ({ value: (max / 4) * i, label: formatRuntime((max / 4) * i) })),
+  };
+}
+
+// Round durations people recognize, used as log-axis gridlines.
+const LOG_TICKS = [
+  { value: 1, label: "1s" },
+  { value: 10, label: "10s" },
+  { value: 60, label: "1m" },
+  { value: 600, label: "10m" },
+  { value: 3600, label: "1h" },
+  { value: 6 * 3600, label: "6h" },
+  { value: 86400, label: "1d" },
+  { value: 7 * 86400, label: "7d" },
+  { value: 30 * 86400, label: "30d" },
+  { value: 365 * 86400, label: "1y" },
+];
+
+// Runtimes under a second (including pending jobs at 0) sit on the 1s floor.
+function createLogScale(runtimes) {
+  const clamp = (value) => Math.max(1, value);
+  const minRuntime = clamp(Math.min(...runtimes));
+  const maxRuntime = clamp(Math.max(...runtimes));
+  const lowTick = [...LOG_TICKS].reverse().find((tick) => tick.value <= minRuntime) || LOG_TICKS[0];
+  const highTick = LOG_TICKS.find((tick) => tick.value >= maxRuntime) || LOG_TICKS[LOG_TICKS.length - 1];
+  const low = Math.log10(lowTick.value);
+  // A little headroom so the longest job doesn't sit on the top edge.
+  const high = Math.max(low + 1, Math.log10(maxRuntime) + 0.1, Math.log10(highTick.value));
+
+  return {
+    fraction: (value) => (Math.log10(clamp(value)) - low) / (high - low),
+    ticks: LOG_TICKS.filter((tick) => tick.value >= lowTick.value && Math.log10(tick.value) <= high),
+  };
+}
+
 function drawChart(jobs) {
   resizeCanvas();
 
@@ -268,14 +314,14 @@ function drawChart(jobs) {
 
   const minX = range ? range.min : Math.min(...datedJobs.map((job) => job.startMs));
   const maxX = range ? range.max : Math.max(...datedJobs.map((job) => job.startMs));
-  const maxRuntime = Math.max(...datedJobs.map((job) => job.runtimeSeconds));
-  const yMax = Math.max(60, maxRuntime * 1.08);
+  const runtimes = datedJobs.map((job) => job.runtimeSeconds);
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
   const xRange = Math.max(1, maxX - minX);
+  const yScale = logScaleEl.checked ? createLogScale(runtimes) : createLinearScale(runtimes);
 
   const xFor = (value) => padding.left + ((value - minX) / xRange) * plotWidth;
-  const yFor = (value) => padding.top + plotHeight - (value / yMax) * plotHeight;
+  const yFor = (value) => padding.top + plotHeight - yScale.fraction(value) * plotHeight;
 
   ctx.strokeStyle = "#dbe2dc";
   ctx.lineWidth = 1;
@@ -284,15 +330,14 @@ function drawChart(jobs) {
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
 
-  for (let i = 0; i <= 4; i += 1) {
-    const runtime = (yMax / 4) * i;
-    const y = yFor(runtime);
+  yScale.ticks.forEach((tick) => {
+    const y = yFor(tick.value);
     ctx.beginPath();
     ctx.moveTo(padding.left, y);
     ctx.lineTo(width - padding.right, y);
     ctx.stroke();
-    ctx.fillText(formatRuntime(runtime), padding.left - 12, y);
-  }
+    ctx.fillText(tick.label, padding.left - 12, y);
+  });
 
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
@@ -315,7 +360,16 @@ function drawChart(jobs) {
     const stateStyle = getStateStyle(job.state);
 
     ctx.beginPath();
-    ctx.arc(x, y, POINT_RADIUS, 0, Math.PI * 2);
+    if (stateStyle.shape === "diamond") {
+      const r = POINT_RADIUS + 1;
+      ctx.moveTo(x, y - r);
+      ctx.lineTo(x + r, y);
+      ctx.lineTo(x, y + r);
+      ctx.lineTo(x - r, y);
+      ctx.closePath();
+    } else {
+      ctx.arc(x, y, POINT_RADIUS, 0, Math.PI * 2);
+    }
     ctx.fillStyle = stateStyle.fill;
     ctx.fill();
     ctx.strokeStyle = stateStyle.stroke;
@@ -325,7 +379,7 @@ function drawChart(jobs) {
   });
 }
 
-const NON_COMPLETED_STATE_ORDER = ["FAILED", "TIMEOUT", "CANCELLED", "PENDING", "RUNNING", "OTHER"];
+const NON_COMPLETED_STATE_ORDER = ["FAILED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL", "CANCELLED", "PENDING", "RUNNING", "OTHER"];
 
 function updateSummary() {
   const runtimes = currentJobs.map((job) => job.runtimeSeconds).filter(Number.isFinite);
@@ -546,6 +600,11 @@ chart.addEventListener("touchmove", (event) => {
 
 chart.addEventListener("touchend", (event) => {
   if (event.touches.length < 2) pinchState = null;
+});
+
+logScaleEl.addEventListener("change", () => {
+  tooltip.hidden = true;
+  drawChart(currentJobs);
 });
 
 resetZoomButton.addEventListener("click", () => {

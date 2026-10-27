@@ -23,7 +23,9 @@ Each point is a Slurm job allocation.
 
 - X-axis: job start time
 - Y-axis: elapsed runtime
-- Color: job state
+- Color: job state. Out-of-memory jobs have their own color; node failures are drawn as dark diamonds; states without their own style are grouped as Other
+
+Check `Log scale` to switch the runtime axis to a logarithmic scale, with gridlines at 1s, 10s, 1m, 10m, 1h, 6h, 1d, and so on. This spreads out short jobs when a few long ones would otherwise squash everything into the bottom of the chart. Jobs with zero runtime (such as pending jobs) sit on the 1s line.
 
 Hover a point to see:
 
