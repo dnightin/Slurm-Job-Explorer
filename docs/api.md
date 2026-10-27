@@ -2,7 +2,7 @@
 
 ## `GET /api/jobs`
 
-Returns Slurm jobs as JSON, one entry per job allocation. Job step rows are read only to find each job's peak memory.
+Returns Slurm jobs as JSON, one entry per job allocation. Peak memory comes from a second `sacct` query over the returned jobs' steps; if it fails, `warning` says so and `maxRssBytes` is `null`.
 
 ### Query Parameters
 

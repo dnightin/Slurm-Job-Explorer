@@ -15,6 +15,7 @@ const {
   selectNewestJobs,
   parseJobsQuery,
   parseSacctRows,
+  parseStepPeakMemory,
   parseMemoryToBytes,
   computeCpuEfficiency,
   createSampleResult,
@@ -95,23 +96,26 @@ test("computeCpuEfficiency divides CPU time by allocated core time", () => {
   assert.equal(computeCpuEfficiency({ ...job, totalCpu: "" }), null);
 });
 
-test("parseSacctRows takes peak memory from job steps and computes wait time", () => {
+test("parseSacctRows skips step rows and computes wait time and efficiency", () => {
   const stdout = [
     "200|sim|ada|acct|batch|COMPLETED|2026-07-31T00:00:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:15:00|",
     "200.batch|batch|||||2026-07-31T00:10:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:14:00|1500M",
-    "200.extern|extern|||||2026-07-31T00:10:00|2026-07-31T00:10:00|2026-07-31T00:20:00|00:10:00|2|00:00:01|4K",
-    "200.0|mpi|||||2026-07-31T00:11:00|2026-07-31T00:11:00|2026-07-31T00:19:00|00:08:00|2|00:00:59|2G",
     "201|idle|ada|acct|batch|PENDING|2026-07-31T00:00:00|Unknown|Unknown|00:00:00|1|00:00:00|",
   ].join("\n");
 
   const rows = parseSacctRows(stdout);
   assert.deepEqual(rows.map((row) => row.jobId), ["200", "201"]);
-  assert.equal(rows[0].maxRssBytes, 2 * 1024 ** 3);
   assert.equal(rows[0].waitSeconds, 600);
   assert.equal(rows[0].cpuEfficiency, 0.75);
-  assert.equal(rows[1].maxRssBytes, null);
   assert.equal(rows[1].waitSeconds, null);
   assert.equal(rows[1].cpuEfficiency, null);
+});
+
+test("parseStepPeakMemory takes the largest MaxRSS across each job's steps", () => {
+  const peaks = parseStepPeakMemory(["200|", "200.batch|1500M", "200.extern|4K", "200.0|2G", "201|", "202.batch|"].join("\n"));
+  assert.equal(peaks.get("200"), 2 * 1024 ** 3);
+  assert.equal(peaks.has("201"), false);
+  assert.equal(peaks.has("202"), false);
 });
 
 test("filterJobsByWindow keeps only jobs whose start falls in range", () => {
@@ -258,6 +262,48 @@ test("/api/jobs returns the newest sacct rows with totals", { skip: process.plat
       assert.ok(payload.jobs.every((job) => Number.isFinite(job.startMs)));
     });
   });
+});
+
+test("/api/jobs fetches peak memory with a second, job-scoped sacct query", { skip: process.platform === "win32" }, async () => {
+  const today = new Date();
+  const stamp = formatSacctDate(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 1));
+  const end = formatSacctDate(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59));
+  const allocation = `300|sim|ada|acct|batch|COMPLETED|${stamp}|${stamp}|${stamp}|00:10:00|2|00:10:00|`;
+  // The main query must ask for allocations only; steps come from the --jobs query.
+  const script = [
+    'case "$*" in',
+    `  *"--jobs 300"*) printf '300|\\n300.batch|512M\\n300.0|1G\\n' ;;`,
+    `  *--allocations*) printf '${allocation}\\n' ;;`,
+    "  *) exit 3 ;;",
+    "esac",
+  ].join("\n");
+
+  await withFakeSacct(script, async () => {
+    await withServer(async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/jobs?days=1&end=${end}`);
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.equal(payload.warning, null);
+      assert.equal(payload.jobs[0].maxRssBytes, 1024 ** 3);
+    });
+  });
+});
+
+test("an abandoned /api/jobs request stops its sacct process", { skip: process.platform === "win32" }, async () => {
+  const pidFile = path.join(os.tmpdir(), `fake-sacct-pid-${process.pid}`);
+  await withFakeSacct(`echo $$ > ${pidFile}; exec sleep 30`, async () => {
+    await withServer(async (baseUrl) => {
+      const controller = new AbortController();
+      const request = fetch(`${baseUrl}/api/jobs`, { signal: controller.signal }).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const pid = Number(fs.readFileSync(pidFile, "utf8"));
+      controller.abort();
+      await request;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+    });
+  });
+  fs.rmSync(pidFile, { force: true });
 });
 
 test("/api/jobs reports a sacct failure as 502 without leaking stderr", { skip: process.platform === "win32" }, async () => {

@@ -243,6 +243,11 @@ button:disabled {
   padding: 12px 16px;
 }
 
+.chart-panel.loading .canvas-wrap {
+  opacity: 0.45;
+  transition: opacity 0.2s;
+}
+
 .chart-actions {
   display: flex;
   flex-wrap: wrap;

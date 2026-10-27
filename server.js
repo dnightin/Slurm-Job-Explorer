@@ -165,26 +165,25 @@ function addDerivedMetrics(job) {
 
 // sacct reports MaxRSS on job steps ("123.batch", "123.0"), not on the
 // allocation row, so peak memory is the largest MaxRSS among a job's steps.
-function parseSacctRows(stdout) {
-  const lines = stdout.split(/\r?\n/).filter(Boolean);
+// Takes "JobIDRaw|MaxRSS" lines and returns a Map of job id to bytes.
+function parseStepPeakMemory(stdout) {
   const stepPeakBytes = new Map();
-  const allocationLines = [];
-
-  for (const line of lines) {
-    const fields = line.split("|");
-    const [jobId] = fields;
+  for (const line of stdout.split(/\r?\n/)) {
+    const [jobId = "", maxRss] = line.split("|");
     const dot = jobId.indexOf(".");
-    if (dot === -1) {
-      allocationLines.push(line);
-      continue;
-    }
+    if (dot === -1) continue;
 
-    const bytes = parseMemoryToBytes(fields[12]);
+    const bytes = parseMemoryToBytes(maxRss);
     const parentId = jobId.slice(0, dot);
     if (bytes != null && bytes > (stepPeakBytes.get(parentId) ?? -1)) {
       stepPeakBytes.set(parentId, bytes);
     }
   }
+  return stepPeakBytes;
+}
+
+function parseSacctRows(stdout) {
+  const allocationLines = stdout.split(/\r?\n/).filter((line) => line && !line.split("|")[0].includes("."));
 
   return allocationLines
     .map((line) => {
@@ -225,10 +224,7 @@ function parseSacctRows(stdout) {
       };
     })
     .filter(Boolean)
-    .map((job) => addDerivedMetrics({
-      ...job,
-      maxRssBytes: stepPeakBytes.get(job.jobId) ?? parseMemoryToBytes(job.maxRss),
-    }));
+    .map((job) => addDerivedMetrics({ ...job, maxRssBytes: parseMemoryToBytes(job.maxRss) }));
 }
 
 function createSampleJobs() {
@@ -318,7 +314,49 @@ function createSampleResult({ limit, user, start, end }) {
   };
 }
 
-function fetchSacctJobs(options) {
+function runSacct(args, signal) {
+  const execOptions = { timeout: SACCT_TIMEOUT_MS, maxBuffer: SACCT_MAX_BUFFER_MB * 1024 * 1024, signal };
+
+  return new Promise((resolve, reject) => {
+    execFile("sacct", args, execOptions, (error, stdout, stderr) => {
+      if (!error) {
+        resolve(stdout);
+        return;
+      }
+      if (error.name === "AbortError") {
+        reject(error);
+        return;
+      }
+
+      console.error(`sacct failed: ${error.message}${stderr ? `\n${stderr}` : ""}`);
+      const sacctError = new Error(describeSacctError(error));
+      sacctError.status = 502;
+      reject(sacctError);
+    });
+  });
+}
+
+// A second, small query for just the jobs being returned. Asking the main
+// query for every step makes it several times larger and slower on a busy
+// cluster, so steps are only fetched for the (at most `limit`) jobs shown.
+async function addStepPeakMemory(result, signal) {
+  if (!result.jobs.length) return result;
+
+  const ids = [...new Set(result.jobs.map((job) => job.jobId))];
+  const args = ["--parsable2", "--noheader", "--duplicates", "--format", "JobIDRaw,MaxRSS", "--jobs", ids.join(",")];
+  try {
+    const peaks = parseStepPeakMemory(await runSacct(args, signal));
+    return {
+      ...result,
+      jobs: result.jobs.map((job) => ({ ...job, maxRssBytes: peaks.get(job.jobId) ?? job.maxRssBytes })),
+    };
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    return { ...result, warning: `Peak memory is unavailable: ${error.message}` };
+  }
+}
+
+async function fetchSacctJobs(options, signal) {
   const { limit, user } = options;
   const start = formatSacctDate(options.start);
   const end = formatSacctDate(options.end);
@@ -342,6 +380,7 @@ function fetchSacctJobs(options) {
     "--parsable2",
     "--noheader",
     "--duplicates",
+    "--allocations",
     "--format",
     fields,
     "--starttime",
@@ -354,25 +393,12 @@ function fetchSacctJobs(options) {
     args.push("--user", user);
   }
 
-  const execOptions = { timeout: SACCT_TIMEOUT_MS, maxBuffer: SACCT_MAX_BUFFER_MB * 1024 * 1024 };
-
-  return new Promise((resolve, reject) => {
-    execFile("sacct", args, execOptions, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`sacct failed: ${error.message}${stderr ? `\n${stderr}` : ""}`);
-        const sacctError = new Error(describeSacctError(error));
-        sacctError.status = 502;
-        reject(sacctError);
-        return;
-      }
-
-      resolve({
-        source: "sacct",
-        warning: null,
-        ...selectNewestJobs(parseSacctRows(stdout), options.start, options.end, limit),
-      });
-    });
-  });
+  const stdout = await runSacct(args, signal);
+  return addStepPeakMemory({
+    source: "sacct",
+    warning: null,
+    ...selectNewestJobs(parseSacctRows(stdout), options.start, options.end, limit),
+  }, signal);
 }
 
 function describeSacctError(error) {
@@ -385,9 +411,9 @@ function describeSacctError(error) {
   return "sacct failed. See the server log for details.";
 }
 
-function getJobs(query) {
+function getJobs(query, signal) {
   const options = parseJobsQuery(query);
-  return DEMO_MODE ? createSampleResult(options) : fetchSacctJobs(options);
+  return DEMO_MODE ? createSampleResult(options) : fetchSacctJobs(options, signal);
 }
 
 function serveStatic(req, res) {
@@ -419,12 +445,19 @@ function createServer() {
       const url = new URL(req.url, "http://localhost");
 
       if (url.pathname === "/api/jobs") {
-        sendJson(res, 200, await getJobs(url.searchParams));
+        // Stop sacct if the browser gives up on the request (for example the
+        // user picked another window), so abandoned queries don't pile up.
+        const abort = new AbortController();
+        res.on("close", () => {
+          if (!res.writableFinished) abort.abort();
+        });
+        sendJson(res, 200, await getJobs(url.searchParams, abort.signal));
         return;
       }
 
       serveStatic(req, res);
     } catch (error) {
+      if (error.name === "AbortError") return;
       const status = error.status || (error.code === "ERR_INVALID_URL" ? 400 : 500);
       if (status === 500) console.error(error);
       if (res.headersSent) {
@@ -454,6 +487,7 @@ module.exports = {
   selectNewestJobs,
   parseJobsQuery,
   parseSacctRows,
+  parseStepPeakMemory,
   parseMemoryToBytes,
   computeCpuEfficiency,
   createSampleJobs,
