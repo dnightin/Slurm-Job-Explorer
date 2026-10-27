@@ -69,6 +69,7 @@ Environment variables:
 | `HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` for local-only access |
 | `DEMO_MODE` | unset | Set to `1` to serve sample data instead of calling `sacct` (same as `--demo`) |
 | `SACCT_TIMEOUT_MS` | `60000` | How long to wait for `sacct` before returning an error |
+| `SACCT_CACHE_SECONDS` | `300` | How long a `sacct` pull is reused for narrower windows and single-user views. `0` turns caching off |
 | `SACCT_MAX_BUFFER_MB` | `64` | Largest `sacct` output accepted, in MB. Raise it for long windows on busy clusters |
 
 Example:
@@ -82,6 +83,8 @@ PORT=8080 HOST=0.0.0.0 npm start
 The server exposes `/api/jobs`, runs `sacct`, parses pipe-delimited output, filters jobs to the requested time window, samples evenly across the window when there are more jobs than the row limit, and returns JSON to the browser. The frontend renders the scatter plot with canvas.
 
 The main `sacct` query requests job allocation rows using the fields below. Slurm records `MaxRSS` on job steps (such as `123.batch`) rather than on the job itself, so after the row limit is applied the server runs a second, small query (`sacct --jobs <ids> --format JobIDRaw,MaxRSS`) for just the jobs being returned. If that second query fails, the jobs are still shown, with a warning that peak memory is unavailable.
+
+The server keeps its last few `sacct` pulls for `SACCT_CACHE_SECONDS` (5 minutes by default). A request for a window inside a recent pull (for example 7 days after a 30-day pull), or for one user after an all-users pull, is filtered from memory without running `sacct`. A wider window runs a new pull. Peak memory for finished jobs is also remembered, since it can't change. `Refresh` always runs a fresh pull, and the status line says how old cached data is.
 
 If the browser abandons a request, for example because you picked a different window while it was loading, the server stops that request's `sacct` process.
 

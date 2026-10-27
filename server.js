@@ -10,6 +10,7 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const DEMO_MODE = process.argv.includes("--demo") || process.env.DEMO_MODE === "1";
 const SACCT_TIMEOUT_MS = Number(process.env.SACCT_TIMEOUT_MS) || 60000;
 const SACCT_MAX_BUFFER_MB = Number(process.env.SACCT_MAX_BUFFER_MB) || 64;
+const SACCT_CACHE_SECONDS = process.env.SACCT_CACHE_SECONDS === undefined ? 300 : Number(process.env.SACCT_CACHE_SECONDS) || 0;
 const MAX_WINDOW_DAYS = 365;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -309,7 +310,16 @@ function parseJobsQuery(query) {
     throw new RequestError(`Window is longer than ${MAX_WINDOW_DAYS} days`);
   }
 
-  return { limit, user, start, end };
+  return {
+    limit,
+    user,
+    start,
+    end,
+    // A window that ends "now" can be answered by a recent pull; one with an
+    // explicit end must be covered exactly.
+    endIsNow: !query.get("end"),
+    refresh: query.get("refresh") === "1",
+  };
 }
 
 function createSampleResult({ limit, user, start, end }) {
@@ -347,25 +357,91 @@ function runSacct(args, signal) {
 // A second, small query for just the jobs being returned. Asking the main
 // query for every step makes it several times larger and slower on a busy
 // cluster, so steps are only fetched for the (at most `limit`) jobs shown.
-async function addStepPeakMemory(result, signal) {
-  if (!result.jobs.length) return result;
+// Peak memory never changes once a job has finished, so it is remembered by
+// job id and only unfinished or not-yet-seen jobs are looked up again.
+const MAX_PEAK_MEMORY_ENTRIES = 200000;
+const finishedPeakMemory = new Map();
 
-  const ids = [...new Set(result.jobs.map((job) => job.jobId))];
-  const args = ["--parsable2", "--noheader", "--duplicates", "--format", "JobIDRaw,MaxRSS", "--jobs", ids.join(",")];
-  try {
-    const peaks = parseStepPeakMemory(await runSacct(args, signal));
-    return {
-      ...result,
-      jobs: result.jobs.map((job) => ({ ...job, maxRssBytes: peaks.get(job.jobId) ?? job.maxRssBytes })),
-    };
-  } catch (error) {
-    if (error.name === "AbortError") throw error;
-    return { ...result, warning: `Peak memory is unavailable: ${error.message}` };
+function isFinishedJob(job) {
+  return !NO_EFFICIENCY_STATES.has(String(job.state || "").split(" ")[0]);
+}
+
+async function addStepPeakMemory(result, signal) {
+  const missing = result.jobs.filter((job) => !finishedPeakMemory.has(job.jobId));
+  let peaks = new Map();
+  let warning = result.warning;
+
+  if (missing.length) {
+    const ids = [...new Set(missing.map((job) => job.jobId))];
+    const args = ["--parsable2", "--noheader", "--duplicates", "--format", "JobIDRaw,MaxRSS", "--jobs", ids.join(",")];
+    try {
+      peaks = parseStepPeakMemory(await runSacct(args, signal));
+      if (finishedPeakMemory.size > MAX_PEAK_MEMORY_ENTRIES) finishedPeakMemory.clear();
+      for (const job of missing) {
+        if (isFinishedJob(job)) finishedPeakMemory.set(job.jobId, peaks.get(job.jobId) ?? null);
+      }
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      warning = `Peak memory is unavailable: ${error.message}`;
+    }
   }
+
+  return {
+    ...result,
+    warning,
+    jobs: result.jobs.map((job) => ({
+      ...job,
+      maxRssBytes: (finishedPeakMemory.has(job.jobId) ? finishedPeakMemory.get(job.jobId) : peaks.get(job.jobId)) ?? job.maxRssBytes,
+    })),
+  };
+}
+
+// Recent sacct pulls, so switching to a narrower window (or from all users to
+// one user) is answered from memory instead of running sacct again. A pull is
+// reused only while it is younger than SACCT_CACHE_SECONDS; Refresh bypasses it.
+const MAX_CACHED_PULLS = 4;
+let cachedPulls = [];
+
+function findCachedPull({ user, start, end, endIsNow }, now = Date.now()) {
+  cachedPulls = cachedPulls.filter((pull) => now - pull.fetchedAt < SACCT_CACHE_SECONDS * 1000);
+
+  return cachedPulls.find((pull) => {
+    const coversUser = pull.user === "" || pull.user === user;
+    const coversStart = pull.startMs <= start.getTime();
+    const coversEnd = endIsNow ? pull.endIsNow : pull.endMs >= end.getTime();
+    return coversUser && coversStart && coversEnd;
+  });
+}
+
+function filterJobsByUser(jobs, user) {
+  if (!user) return jobs;
+  const users = new Set(user.split(","));
+  return jobs.filter((job) => users.has(job.user));
+}
+
+function rememberPull(pull) {
+  if (!SACCT_CACHE_SECONDS) return;
+  cachedPulls = [pull, ...cachedPulls].slice(0, MAX_CACHED_PULLS);
+}
+
+function clearSacctCache() {
+  cachedPulls = [];
+  finishedPeakMemory.clear();
 }
 
 async function fetchSacctJobs(options, signal) {
   const { limit, user } = options;
+  const cached = options.refresh ? null : findCachedPull(options);
+  if (cached) {
+    return addStepPeakMemory({
+      source: "sacct",
+      warning: null,
+      fetchedAt: cached.fetchedAt,
+      fromCache: true,
+      ...selectWindowJobs(filterJobsByUser(cached.jobs, user), options.start, options.end, limit),
+    }, signal);
+  }
+
   const start = formatSacctDate(options.start);
   const end = formatSacctDate(options.end);
   const fields = [
@@ -401,11 +477,23 @@ async function fetchSacctJobs(options, signal) {
     args.push("--user", user);
   }
 
-  const stdout = await runSacct(args, signal);
+  const fetchedAt = Date.now();
+  const jobs = parseSacctRows(await runSacct(args, signal));
+  rememberPull({
+    user,
+    startMs: options.start.getTime(),
+    endMs: options.end.getTime(),
+    endIsNow: options.endIsNow,
+    fetchedAt,
+    jobs,
+  });
+
   return addStepPeakMemory({
     source: "sacct",
     warning: null,
-    ...selectWindowJobs(parseSacctRows(stdout), options.start, options.end, limit),
+    fetchedAt,
+    fromCache: false,
+    ...selectWindowJobs(jobs, options.start, options.end, limit),
   }, signal);
 }
 
@@ -502,4 +590,5 @@ module.exports = {
   createSampleResult,
   formatSeconds,
   createServer,
+  clearSacctCache,
 };

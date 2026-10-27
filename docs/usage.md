@@ -13,7 +13,7 @@ The images below use sanitized sample data for documentation.
 - `Window`: reloads data for the selected number of days.
 - `Limit`: caps the number of jobs plotted. When the window holds more, the chart shows an evenly spaced sample across the whole window, and the status line says so. The time axis always spans the full window.
 - `User`: reloads data scoped to one Slurm user (`limit` applies to that user's jobs). The dropdown is populated from the most recent unfiltered load.
-- `Refresh`: reloads data using the current window and limit.
+- `Refresh`: reloads data using the current window and limit, always running a fresh `sacct` query. Changing the window or user may instead reuse a pull from the last few minutes, which is much faster; the status line says how old that data is.
 
 Changing the `Window` dropdown reloads data immediately.
 
