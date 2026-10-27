@@ -13,7 +13,7 @@ A small Node.js web app for exploring Slurm `sacct` history in a browser. The fi
 - Mousewheel or pinch-to-zoom scales the chart time range
 - Hover tooltips show job details
 - Accessible data table alternative to the chart, for keyboard and screen-reader users
-- Falls back to sample data if `sacct` is unavailable
+- Demo mode (`npm run demo`) with generated sample data, for trying the UI without Slurm. In normal mode a failed `sacct` call shows an error instead of fake data
 
 ## Screenshots
 
@@ -46,6 +46,12 @@ By default the app listens on all interfaces:
 http://0.0.0.0:3017
 ```
 
+To try the UI on a machine without Slurm, start it in demo mode instead. It always serves generated sample data and says so in a banner:
+
+```bash
+npm run demo
+```
+
 Browse to the server by hostname or IP address:
 
 ```text
@@ -61,6 +67,9 @@ Environment variables:
 | --- | --- | --- |
 | `PORT` | `3017` | TCP port for the web server |
 | `HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` for local-only access |
+| `DEMO_MODE` | unset | Set to `1` to serve sample data instead of calling `sacct` (same as `--demo`) |
+| `SACCT_TIMEOUT_MS` | `60000` | How long to wait for `sacct` before returning an error |
+| `SACCT_MAX_BUFFER_MB` | `64` | Largest `sacct` output accepted, in MB. Raise it for long windows on busy clusters |
 
 Example:
 
@@ -70,7 +79,7 @@ PORT=8080 HOST=0.0.0.0 npm start
 
 ## How It Works
 
-The server exposes `/api/jobs`, runs `sacct`, parses pipe-delimited output, filters jobs to the requested time window, and returns JSON to the browser. The frontend renders the scatter plot with canvas.
+The server exposes `/api/jobs`, runs `sacct`, parses pipe-delimited output, filters jobs to the requested time window, keeps the newest jobs up to the row limit, and returns JSON to the browser. The frontend renders the scatter plot with canvas.
 
 The `sacct` query requests allocation rows using:
 

@@ -4,6 +4,7 @@ const form = document.querySelector("#filters");
 const tooltip = document.querySelector("#tooltip");
 const daysEl = document.querySelector("#days");
 const statusEl = document.querySelector("#status");
+const noticeEl = document.querySelector("#notice");
 const datasetMetaEl = document.querySelector("#datasetMeta");
 const jobCountEl = document.querySelector("#jobCount");
 const medianRuntimeEl = document.querySelector("#medianRuntime");
@@ -166,10 +167,10 @@ function resizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 
+// startMs comes from the server, which dates each job by Start, then Submit,
+// then End, the same rule it uses to filter the window.
 function getDatedJobs(jobs) {
-  return jobs
-    .map((job) => ({ ...job, startMs: new Date(job.start || job.submit || job.end).getTime() }))
-    .filter((job) => Number.isFinite(job.startMs) && Number.isFinite(job.runtimeSeconds));
+  return jobs.filter((job) => Number.isFinite(job.startMs) && Number.isFinite(job.runtimeSeconds));
 }
 
 function setFullTimeRange(jobs) {
@@ -201,7 +202,10 @@ function updateStatusText(visibleCount) {
 
   const selectedUser = userFilterEl.value;
   const filteredText = selectedUser ? ` for ${selectedUser}` : "";
-  const sourceText = lastPayload.warning || `Showing ${currentJobs.length.toLocaleString()} of ${loadedJobs.length.toLocaleString()} jobs${filteredText} from ${lastPayload.source}.`;
+  const truncatedText = lastPayload.truncated
+    ? ` These are the newest ${loadedJobs.length.toLocaleString()} of ${lastPayload.total.toLocaleString()} jobs in the window; raise Limit to see more.`
+    : "";
+  const sourceText = `Showing ${currentJobs.length.toLocaleString()} of ${loadedJobs.length.toLocaleString()} jobs${filteredText} from ${formatSourceLabel(lastPayload.source)}.${truncatedText}`;
   if (isZoomed()) {
     statusEl.textContent = `${sourceText} Zoomed to ${visibleCount.toLocaleString()} visible jobs.`;
     return;
@@ -349,6 +353,22 @@ function updateSummary() {
   updateStatusText(currentJobs.length);
 }
 
+function showNotice(message, kind) {
+  noticeEl.textContent = message || "";
+  noticeEl.dataset.kind = kind || "";
+  noticeEl.hidden = !message;
+}
+
+async function readError(response) {
+  try {
+    const payload = await response.json();
+    if (payload.error) return payload.error;
+  } catch {
+    // Not JSON; fall through to the status code.
+  }
+  return `Request failed with ${response.status}`;
+}
+
 function positionTooltip(hit) {
   const margin = 12;
   const width = chart.clientWidth;
@@ -376,9 +396,10 @@ async function loadJobs() {
 
   try {
     const response = await fetch(`/api/jobs?${params.toString()}`);
-    if (!response.ok) throw new Error(`Request failed with ${response.status}`);
+    if (!response.ok) throw new Error(await readError(response));
     const payload = await response.json();
     lastPayload = payload;
+    showNotice(payload.warning, payload.source === "sample" ? "info" : "warning");
     loadedJobs = payload.jobs;
     // The server already scopes jobs to requestedUser (if set), so only an
     // unfiltered fetch reflects the full set of users for this window.
@@ -391,7 +412,8 @@ async function loadJobs() {
     loadedJobs = [];
     renderUserFilter(loadedJobs);
     applyFilters();
-    statusEl.textContent = error.message;
+    showNotice(error.message, "error");
+    statusEl.textContent = "No data loaded.";
   }
 }
 

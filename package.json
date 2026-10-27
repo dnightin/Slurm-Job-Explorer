@@ -5,6 +5,7 @@
   "description": "A small web app for exploring Slurm sacct job history.",
   "scripts": {
     "start": "node server.js",
+    "demo": "node server.js --demo",
     "test": "node --test"
   },
   "engines": {

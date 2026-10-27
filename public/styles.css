@@ -166,6 +166,27 @@ button:disabled {
   opacity: 0.48;
 }
 
+.notice {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid #e3c27a;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fdf5e2;
+  color: #5c4100;
+  font-weight: 600;
+}
+
+.notice[data-kind="error"] {
+  border-color: #e0a3a2;
+  background: #fbebeb;
+  color: #7a2423;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
 .summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
