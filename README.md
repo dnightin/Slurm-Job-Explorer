@@ -7,8 +7,8 @@ A small Node.js web app for exploring Slurm `sacct` history in a browser. The fi
 ## Features
 
 - Pulls job allocation data from `sacct`
-- Graphs job runtime by start time
-- Color-codes points by Slurm state, using a categorical palette validated for color-vision-deficiency separation
+- Graphs job runtime by start time, on a linear or log-scale runtime axis
+- Color-codes points by Slurm state (including out-of-memory and node-fail), using a categorical palette validated for color-vision-deficiency separation
 - Filters by time window, row limit, and user
 - Mousewheel or pinch-to-zoom scales the chart time range
 - Hover tooltips show job details

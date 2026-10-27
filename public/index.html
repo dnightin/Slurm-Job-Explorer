@@ -73,7 +73,13 @@
             <h2>Runtime by start time</h2>
             <p id="status">Loading job history...</p>
           </div>
-          <button id="resetZoom" class="secondary" type="button" disabled>Reset zoom</button>
+          <div class="chart-actions">
+            <label class="toggle">
+              <input id="logScale" type="checkbox">
+              Log scale
+            </label>
+            <button id="resetZoom" class="secondary" type="button" disabled>Reset zoom</button>
+          </div>
         </div>
         <div class="legend-row">
           <div id="stateLegend" class="legend" aria-label="State color legend"></div>

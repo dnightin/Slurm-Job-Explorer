@@ -184,7 +184,7 @@ function createSampleJobs() {
       user: ["ada", "grace", "linus", "margaret"][index % 4],
       account: "research",
       partition: ["batch", "gpu", "debug"][index % 3],
-      state: states[index % states.length],
+      state: index % 13 === 5 ? "OUT_OF_MEMORY" : index % 29 === 7 ? "NODE_FAIL" : states[index % states.length],
       submit: submittedAt.toISOString(),
       start: new Date(submittedAt.getTime() + 1000 * 60 * (index % 8)).toISOString(),
       end: new Date(submittedAt.getTime() + runtimeSeconds * 1000).toISOString(),
