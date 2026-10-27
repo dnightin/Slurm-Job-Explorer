@@ -2,6 +2,7 @@ const chart = document.querySelector("#runtimeChart");
 const ctx = chart.getContext("2d");
 const form = document.querySelector("#filters");
 const tooltip = document.querySelector("#tooltip");
+const chartPanelEl = document.querySelector(".chart-panel");
 const daysEl = document.querySelector("#days");
 const statusEl = document.querySelector("#status");
 const noticeEl = document.querySelector("#notice");
@@ -522,14 +523,24 @@ function positionTooltip(hit) {
   tooltip.style.top = `${top}px`;
 }
 
+let activeRequest = null;
+
 async function loadJobs() {
   const params = new URLSearchParams(new FormData(form));
   const requestedUser = params.get("user") || "";
   statusEl.textContent = "Loading job history...";
   tooltip.hidden = true;
 
+  // Cancel a slower earlier request so its answer can't overwrite this one;
+  // the server stops that request's sacct when the connection closes.
+  activeRequest?.abort();
+  const request = new AbortController();
+  activeRequest = request;
+  chartPanelEl.classList.add("loading");
+  chartPanelEl.setAttribute("aria-busy", "true");
+
   try {
-    const response = await fetch(`/api/jobs?${params.toString()}`);
+    const response = await fetch(`/api/jobs?${params.toString()}`, { signal: request.signal });
     if (!response.ok) throw new Error(await readError(response));
     const payload = await response.json();
     lastPayload = payload;
@@ -542,12 +553,19 @@ async function loadJobs() {
     }
     applyFilters();
   } catch (error) {
+    if (error.name === "AbortError") return;
     lastPayload = null;
     loadedJobs = [];
     renderUserFilter(loadedJobs);
     applyFilters();
     showNotice(error.message, "error");
     statusEl.textContent = "No data loaded.";
+  } finally {
+    if (activeRequest === request) {
+      activeRequest = null;
+      chartPanelEl.classList.remove("loading");
+      chartPanelEl.removeAttribute("aria-busy");
+    }
   }
 }
 

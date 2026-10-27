@@ -81,7 +81,9 @@ PORT=8080 HOST=0.0.0.0 npm start
 
 The server exposes `/api/jobs`, runs `sacct`, parses pipe-delimited output, filters jobs to the requested time window, keeps the newest jobs up to the row limit, and returns JSON to the browser. The frontend renders the scatter plot with canvas.
 
-The `sacct` query requests job and job-step rows using the fields below. Step rows (such as `123.batch`) are only used to find each job's peak memory, because Slurm records `MaxRSS` on steps rather than on the job itself. Including steps makes `sacct` output a few times larger than before, so on very busy clusters you may need to raise `SACCT_MAX_BUFFER_MB`.
+The main `sacct` query requests job allocation rows using the fields below. Slurm records `MaxRSS` on job steps (such as `123.batch`) rather than on the job itself, so after the row limit is applied the server runs a second, small query (`sacct --jobs <ids> --format JobIDRaw,MaxRSS`) for just the jobs being returned. If that second query fails, the jobs are still shown, with a warning that peak memory is unavailable.
+
+If the browser abandons a request, for example because you picked a different window while it was loading, the server stops that request's `sacct` process.
 
 ```text
 JobIDRaw, JobName, User, Account, Partition, State, Submit, Start, End, Elapsed, AllocCPUS, TotalCPU, MaxRSS
