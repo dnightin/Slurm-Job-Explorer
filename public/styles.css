@@ -245,8 +245,9 @@ button:disabled {
 
 .chart-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
 }
 
 .toggle {
@@ -257,6 +258,21 @@ button:disabled {
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.metric-picker {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-dark);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.toggle.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .toggle input {

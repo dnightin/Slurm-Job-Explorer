@@ -7,7 +7,7 @@ A small Node.js web app for exploring Slurm `sacct` history in a browser. The fi
 ## Features
 
 - Pulls job allocation data from `sacct`
-- Graphs job runtime by start time, on a linear or log-scale runtime axis
+- Graphs job runtime, queue wait, CPU efficiency, or peak memory by start time, on a linear or log-scale axis
 - Color-codes points by Slurm state (including out-of-memory and node-fail), using a categorical palette validated for color-vision-deficiency separation
 - Filters by time window, row limit, and user
 - Mousewheel or pinch-to-zoom scales the chart time range
@@ -81,7 +81,7 @@ PORT=8080 HOST=0.0.0.0 npm start
 
 The server exposes `/api/jobs`, runs `sacct`, parses pipe-delimited output, filters jobs to the requested time window, keeps the newest jobs up to the row limit, and returns JSON to the browser. The frontend renders the scatter plot with canvas.
 
-The `sacct` query requests allocation rows using:
+The `sacct` query requests job and job-step rows using the fields below. Step rows (such as `123.batch`) are only used to find each job's peak memory, because Slurm records `MaxRSS` on steps rather than on the job itself. Including steps makes `sacct` output a few times larger than before, so on very busy clusters you may need to raise `SACCT_MAX_BUFFER_MB`.
 
 ```text
 JobIDRaw, JobName, User, Account, Partition, State, Submit, Start, End, Elapsed, AllocCPUS, TotalCPU, MaxRSS

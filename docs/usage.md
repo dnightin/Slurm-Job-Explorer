@@ -22,16 +22,29 @@ Changing the `Window` dropdown reloads data immediately.
 Each point is a Slurm job allocation.
 
 - X-axis: job start time
-- Y-axis: elapsed runtime
+- Y-axis: picked with the `Y-axis` menu (see below)
 - Color: job state. Out-of-memory jobs have their own color; node failures are drawn as dark diamonds; states without their own style are grouped as Other
 
-Check `Log scale` to switch the runtime axis to a logarithmic scale, with gridlines at 1s, 10s, 1m, 10m, 1h, 6h, 1d, and so on. This spreads out short jobs when a few long ones would otherwise squash everything into the bottom of the chart. Jobs with zero runtime (such as pending jobs) sit on the 1s line.
+The `Y-axis` menu picks what each point's height shows:
+
+| Option | Meaning |
+| --- | --- |
+| Runtime | Elapsed wall-clock time |
+| Queue wait | Start minus Submit: how long the job waited for resources |
+| CPU efficiency | `TotalCPU / (Elapsed × AllocCPUS)`. Low values mean cores were allocated but idle |
+| Peak memory | The largest `MaxRSS` across the job's steps |
+
+Jobs with no value for the chosen metric are left off the chart, and the status line says how many. CPU efficiency is blank for jobs that are pending or still running (Slurm only adds CPU time when a step finishes), and wait time is blank for jobs that haven't started.
+
+Check `Log scale` to switch the axis to a logarithmic scale, with gridlines at round values (1s, 10s, 1m, 10m, 1h, 6h, 1d for times; 1 MB, 10 MB, 100 MB, 1 GB for memory). This spreads out small values when a few large ones would otherwise squash everything into the bottom of the chart. Zero values (such as a pending job's runtime) sit on the lowest line. CPU efficiency is always shown on a linear 0-100% scale.
+
+The summary tiles above the chart include the median CPU efficiency and median queue wait for the loaded jobs.
 
 Hover a point to see:
 
 - Job ID
 - Job name
-- Runtime
+- Runtime, CPU efficiency, peak memory, and queue wait
 - State
 - User
 - Start time
